@@ -14,7 +14,7 @@ AM_CFLAGS = -DPKGDATADIR=\"$(pkgdatadir)\" \
 
 bin_PROGRAMS = seaf-fuse
 
-noinst_HEADERS = seaf-fuse.h seafile-session.h repo-mgr.h
+noinst_HEADERS = seaf-fuse.h seafile-session.h repo-mgr.h user-mgr.h ccnetdb-config.h
 
 seaf_fuse_SOURCES = seaf-fuse.c \
                     seafile-session.c \
@@ -22,6 +22,8 @@ seaf_fuse_SOURCES = seaf-fuse.c \
 					getattr.c \
                     readdir.c \
                     repo-mgr.c \
+                    user-mgr.c \
+                    ccnetdb-config.c \
                     ../common/block-mgr.c \
                     ../common/block-backend.c \
                     ../common/block-backend-fs.c \

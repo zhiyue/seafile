@@ -11,10 +11,9 @@
 #include "seafile-session.h"
 #include "seaf-utils.h"
 
-
 SeafileSession *
 seafile_session_new(const char *seafile_dir,
-                    CcnetClient *ccnet_session)
+                    char *ccnet_dir)
 {
     char *abs_seafile_dir;
     char *tmp_file_dir;
@@ -22,9 +21,6 @@ seafile_session_new(const char *seafile_dir,
     struct stat st;
     GKeyFile *config;
     SeafileSession *session = NULL;
-
-    if (!ccnet_session)
-        return NULL;
 
     abs_seafile_dir = ccnet_expand_path (seafile_dir);
     tmp_file_dir = g_build_filename(abs_seafile_dir, "tmpfiles", NULL);
@@ -44,47 +40,54 @@ seafile_session_new(const char *seafile_dir,
 
     GError *error = NULL;
     config = g_key_file_new ();
-    if (!g_key_file_load_from_file (config, config_file_path, 
+    if (!g_key_file_load_from_file (config, config_file_path,
                                     G_KEY_FILE_NONE, &error)) {
-        g_warning ("Failed to load config file.\n");
+        g_warning ("Failed to load seafile config file.\n");
         g_key_file_free (config);
+        g_clear_error (&error);
         goto onerror;
     }
 
     session = g_new0(SeafileSession, 1);
     session->seaf_dir = abs_seafile_dir;
     session->tmp_file_dir = tmp_file_dir;
-    session->session = ccnet_session;
     session->config = config;
 
     if (load_database_config (session) < 0) {
-        g_warning ("Failed to load database config.\n");
-        goto onerror;
+        g_warning ("Failed to load seafile database config.\n");
+        goto out;
     }
 
     session->fs_mgr = seaf_fs_manager_new (session, abs_seafile_dir);
     if (!session->fs_mgr)
-        goto onerror;
+        goto out;
     session->block_mgr = seaf_block_manager_new (session, abs_seafile_dir);
     if (!session->block_mgr)
-        goto onerror;
+        goto out;
     session->commit_mgr = seaf_commit_manager_new (session);
     if (!session->commit_mgr)
-        goto onerror;
+        goto out;
     session->repo_mgr = seaf_repo_manager_new (session);
     if (!session->repo_mgr)
-        goto onerror;
+        goto out;
     session->branch_mgr = seaf_branch_manager_new (session);
     if (!session->branch_mgr)
-        goto onerror;
+        goto out;
+    session->user_mgr = seaf_user_manager_new (ccnet_dir);
+    if (!session->user_mgr)
+        goto out;
 
     return session;
 
+out:
+    g_key_file_free (config);
+    g_free (session);
 onerror:
     free (abs_seafile_dir);
+    g_free (tmp_file_dir);
     g_free (config_file_path);
-    g_free (session);
-    return NULL;    
+
+    return NULL;
 }
 
 int

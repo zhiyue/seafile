@@ -18,7 +18,6 @@
 
 #include "seaf-fuse.h"
 
-CcnetClient *ccnet_client = NULL;
 SeafileSession *seaf = NULL;
 
 static char *parse_repo_id (const char *repo_id_name)
@@ -294,7 +293,9 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+#if !GLIB_CHECK_VERSION(2, 35, 0)
     g_type_init();
+#endif
 
     config_dir = options.config_dir ? : DEFAULT_CONFIG_DIR;
     config_dir = ccnet_expand_path (config_dir);
@@ -319,13 +320,7 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    ccnet_client = ccnet_client_new();
-    if ((ccnet_client_load_confdir(ccnet_client, config_dir)) < 0) {
-        seaf_warning("Read config dir error\n");
-        exit(1);
-    }
-
-    seaf = seafile_session_new(seafile_dir, ccnet_client);
+    seaf = seafile_session_new(seafile_dir, config_dir);
     if (!seaf) {
         seaf_warning("Failed to create seafile session.\n");
         exit(1);
@@ -333,12 +328,6 @@ int main(int argc, char *argv[])
 
     if (seafile_session_init(seaf) < 0) {
         seaf_warning("Failed to init seafile session.\n");
-        exit(1);
-    }
-
-    seaf->client_pool = ccnet_client_pool_new(config_dir);
-    if (!seaf->client_pool) {
-        seaf_warning("Failed to creat client pool\n");
         exit(1);
     }
 

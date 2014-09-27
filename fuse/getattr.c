@@ -6,7 +6,6 @@
 #include <glib.h>
 #include <glib-object.h>
 
-#include <ccnet.h>
 #include <ccnet/ccnet-object.h>
 #include <seaf-db.h>
 
@@ -15,13 +14,7 @@
 
 #include "seaf-fuse.h"
 #include "seafile-session.h"
-
-static CcnetEmailUser *get_user_from_ccnet (SearpcClient *client, const char *user)
-{
-    return (CcnetEmailUser *)searpc_client_call__object (client,
-                                       "get_emailuser", CCNET_TYPE_EMAIL_USER, NULL,
-                                       1, "string", user);
-}
+#include "user-mgr.h"
 
 static int getattr_root(SeafileSession *seaf, struct stat *stbuf)
 {
@@ -34,24 +27,13 @@ static int getattr_root(SeafileSession *seaf, struct stat *stbuf)
 
 static int getattr_user(SeafileSession *seaf, const char *user, struct stat *stbuf)
 {
-    SearpcClient *client;
     CcnetEmailUser *emailuser;
 
-    client = ccnet_create_pooled_rpc_client (seaf->client_pool,
-                                             NULL,
-                                             "ccnet-threaded-rpcserver");
-    if (!client) {
-        seaf_warning ("Failed to alloc rpc client.\n");
-        return -ENOMEM;
-    }
-
-    emailuser = get_user_from_ccnet (client, user);
+    emailuser = seaf_user_manager_get_emailuser (seaf->user_mgr, user);
     if (!emailuser) {
-        ccnet_rpc_client_free (client);
         return -ENOENT;
     }
     g_object_unref (emailuser);
-    ccnet_rpc_client_free (client);
 
     stbuf->st_mode = S_IFDIR | 0755;
     stbuf->st_nlink = 2;
