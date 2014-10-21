@@ -73,7 +73,7 @@ seafile_session_new(const char *seafile_dir,
     session->branch_mgr = seaf_branch_manager_new (session);
     if (!session->branch_mgr)
         goto out;
-    session->user_mgr = seaf_user_manager_new (ccnet_dir);
+    session->user_mgr = fuse_user_manager_new (ccnet_dir);
     if (!session->user_mgr)
         goto out;
 

@@ -28,7 +28,7 @@ struct _SeafileSession {
     SeafBranchManager   *branch_mgr;
     SeafCommitManager   *commit_mgr;
     SeafRepoManager     *repo_mgr;
-    SeafUserManager     *user_mgr;
+    FuseUserManager     *user_mgr;
 };
 
 extern SeafileSession *seaf;

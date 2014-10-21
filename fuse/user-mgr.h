@@ -5,7 +5,7 @@
 #include <ccnet/ccnet-object.h>
 #include <seaf-db.h>
 
-typedef struct SeafUserManager {
+typedef struct FuseUserManager {
     char                *ccnet_dir;
     GKeyFile            *keyf;
     SeafDB              *ccnetdb;
@@ -22,20 +22,20 @@ typedef struct SeafUserManager {
     char           *password;   /* password for admin user */
     char           *login_attr;  /* attribute name used for login */
 #endif
-} SeafUserManager;
+} FuseUserManager;
 
-SeafUserManager*
-seaf_user_manager_new (char *ccnet_dir);
+FuseUserManager*
+fuse_user_manager_new (char *ccnet_dir);
 
 void
-seaf_user_manager_delete (SeafUserManager *user_mgr);
+fuse_user_manager_delete (FuseUserManager *user_mgr);
 
 GList*
-seaf_user_manager_get_emailusers (SeafUserManager *manager,
+fuse_user_manager_get_emailusers (FuseUserManager *manager,
                                   const char *source,
                                   int start, int limit);
 CcnetEmailUser*
-seaf_user_manager_get_emailuser (SeafUserManager *manager,
+fuse_user_manager_get_emailuser (FuseUserManager *manager,
                                  const char *email);
 #endif
 

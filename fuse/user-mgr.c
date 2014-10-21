@@ -12,8 +12,8 @@
   #endif
 #endif
 
-SeafUserManager*
-seaf_user_manager_new (char *ccnet_dir)
+FuseUserManager*
+fuse_user_manager_new (char *ccnet_dir)
 {
     char *ccnet_file_path;
     struct stat st;
@@ -39,7 +39,7 @@ seaf_user_manager_new (char *ccnet_dir)
         return NULL;
     }
 
-    SeafUserManager *mgr = g_new0 (SeafUserManager, 1);
+    FuseUserManager *mgr = g_new0 (FuseUserManager, 1);
     mgr->ccnet_dir = ccnet_dir;
     mgr->keyf = ccnet_config;
 
@@ -58,12 +58,12 @@ seaf_user_manager_new (char *ccnet_dir)
     return mgr;
 
 out:
-    seaf_user_manager_delete (mgr);
+    fuse_user_manager_delete (mgr);
     return NULL;
 }
 
 void
-seaf_user_manager_delete (SeafUserManager *user_mgr)
+fuse_user_manager_delete (FuseUserManager *user_mgr)
 {
     if (!user_mgr)
         return;
@@ -160,7 +160,7 @@ static LDAP *ldap_init_and_bind (const char *host,
     return ld;
 }
 
-static GList *ldap_list_users (SeafUserManager *manager, const char *uid,
+static GList *ldap_list_users (FuseUserManager *manager, const char *uid,
                                int start, int limit)
 {
     LDAP *ld = NULL;
@@ -307,9 +307,9 @@ get_emailuser_cb (SeafDBRow *row, void *data)
 }
 
 GList*
-seaf_user_manager_get_emailusers (SeafUserManager *manager,
-                                   const char *source,
-                                   int start, int limit)
+fuse_user_manager_get_emailusers (FuseUserManager *manager,
+                                  const char *source,
+                                  int start, int limit)
 {
     SeafDB *db = manager->ccnetdb;
     GList *ret = NULL;
@@ -366,8 +366,8 @@ get_role_emailuser_cb (SeafDBRow *row, void *data)
 }
 
 static char*
-seaf_user_manager_get_role_emailuser (SeafUserManager *manager,
-                                     const char* email)
+fuse_user_manager_get_role_emailuser (FuseUserManager *manager,
+                                      const char* email)
 {
 
     SeafDB *db = manager->ccnetdb;
@@ -383,8 +383,8 @@ seaf_user_manager_get_role_emailuser (SeafUserManager *manager,
 }
 
 CcnetEmailUser*
-seaf_user_manager_get_emailuser (SeafUserManager *manager,
-                                  const char *email)
+fuse_user_manager_get_emailuser (FuseUserManager *manager,
+                                 const char *email)
 {
     SeafDB *db = manager->ccnetdb;
     char *sql;
@@ -395,7 +395,7 @@ seaf_user_manager_get_emailuser (SeafUserManager *manager,
           " FROM EmailUser WHERE email=?";
     if (seaf_db_statement_foreach_row (db, sql, get_emailuser_cb, &emailuser,
                                         1, "string", email) > 0) {
-        char *role = seaf_user_manager_get_role_emailuser (manager, email);
+        char *role = fuse_user_manager_get_role_emailuser (manager, email);
         if (role) {
             g_object_set (emailuser, "role", role, NULL);
             g_free (role);
@@ -406,7 +406,7 @@ seaf_user_manager_get_emailuser (SeafUserManager *manager,
     email_down = g_ascii_strdown (email, strlen(email));
     if (seaf_db_statement_foreach_row (db, sql, get_emailuser_cb, &emailuser,
                                         1, "string", email_down) > 0) {
-        char *role = seaf_user_manager_get_role_emailuser(manager, email_down);
+        char *role = fuse_user_manager_get_role_emailuser(manager, email_down);
         if (role) {
             g_object_set (emailuser, "role", role, NULL);
             g_free (role);

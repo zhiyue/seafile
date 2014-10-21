@@ -41,7 +41,7 @@ static int readdir_root(SeafileSession *seaf,
 
     user_hash = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
 
-    users = seaf_user_manager_get_emailusers (seaf->user_mgr, "DB", -1, -1);
+    users = fuse_user_manager_get_emailusers (seaf->user_mgr, "DB", -1, -1);
     for (p = users; p; p = p->next) {
         user = p->data;
         email = ccnet_email_user_get_email (user);
@@ -50,7 +50,7 @@ static int readdir_root(SeafileSession *seaf,
     }
     g_list_free (users);
 
-    users = seaf_user_manager_get_emailusers (seaf->user_mgr, "LDAP", -1, -1);
+    users = fuse_user_manager_get_emailusers (seaf->user_mgr, "LDAP", -1, -1);
     for (p = users; p; p = p->next) {
         user = p->data;
         email = ccnet_email_user_get_email (user);
@@ -79,7 +79,7 @@ static int readdir_user(SeafileSession *seaf, const char *user,
     GList *list = NULL, *p;
     GString *name;
 
-    emailuser = seaf_user_manager_get_emailuser (seaf->user_mgr, user);
+    emailuser = fuse_user_manager_get_emailuser (seaf->user_mgr, user);
     if (!emailuser) {
         return -ENOENT;
     }

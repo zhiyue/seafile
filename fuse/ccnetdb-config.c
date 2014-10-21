@@ -5,7 +5,7 @@
 #define CCNET_DB "ccnet.db"
 
 static int
-init_sqlite_database (SeafUserManager *manager)
+init_sqlite_database (FuseUserManager *manager)
 {
     char *db_path;
     int max_connections = 0;
@@ -31,7 +31,7 @@ init_sqlite_database (SeafUserManager *manager)
 #define MYSQL_DEFAULT_PORT "3306"
 
 static int
-init_mysql_database (SeafUserManager *manager)
+init_mysql_database (FuseUserManager *manager)
 {
     char *host, *port, *user, *passwd, *db, *unix_socket, *charset;
     int max_connections = 0;
@@ -108,7 +108,7 @@ init_mysql_database (SeafUserManager *manager)
 }
 
 static int
-init_pgsql_database (SeafUserManager *manager)
+init_pgsql_database (FuseUserManager *manager)
 {
     char *host, *user, *passwd, *db, *unix_socket;
 
@@ -165,7 +165,7 @@ init_pgsql_database (SeafUserManager *manager)
 }
 
 int
-load_ccnetdb_config (SeafUserManager *manager)
+load_ccnetdb_config (FuseUserManager *manager)
 {
     int ret;
     char *engine;
@@ -189,7 +189,7 @@ load_ccnetdb_config (SeafUserManager *manager)
 
 #ifdef HAVE_LDAP
 int
-load_ldap_settings (SeafUserManager *manager)
+load_ldap_settings (FuseUserManager *manager)
 {
     GKeyFile *config = manager->keyf;
 
