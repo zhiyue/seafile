@@ -75,5 +75,8 @@
   <?define ProductGuid="3AC9D6C4-4F26-4736-BDEB-8FE9D3BB6323" ?>
 
   <?define ShellGuid="D14BEDD3-4E05-4F2F-B0DE-C0381E6AE606" ?>
+  <?define ShellGuidIconNormal="D14BEDD3-4E05-4F2F-B0DE-C0381E6AE607" ?>
+  <?define ShellGuidIconSyncing="D14BEDD3-4E05-4F2F-B0DE-C0381E6AE608" ?>
+  <?define ShellGuidIconError="D14BEDD3-4E05-4F2F-B0DE-C0381E6AE609" ?>
 
 </Include>
