@@ -15,7 +15,7 @@ AM_CFLAGS = -DPKGDATADIR=\"$(pkgdatadir)\" \
 
 bin_PROGRAMS = 
 if !SERVER_ONLY
-bin_PROGRAMS += seaf-daemon
+bin_PROGRAMS += seaf-daemon set-perm
 endif
 
 proc_headers = $(addprefix processors/, \
@@ -131,11 +131,11 @@ seaf_daemon_LDADD = $(top_builddir)/lib/libseafile_common.la \
 
 seaf_daemon_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
 
-set_ro_SOURCES = set-ro.c
+set_perm_SOURCES = set-perm.c
 
-set_ro_LDADD = $(top_builddir)/lib/libseafile_common.la @GLIB2_LIBS@
+set_perm_LDADD = $(top_builddir)/lib/libseafile_common.la @GLIB2_LIBS@
 
-set_ro_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
+set_perm_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
 
 # seaf_tool_CFLAGS = $(AM_CFLAGS) -DSEAF_TOOL
 
