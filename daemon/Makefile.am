@@ -15,7 +15,7 @@ AM_CFLAGS = -DPKGDATADIR=\"$(pkgdatadir)\" \
 
 bin_PROGRAMS = 
 if !SERVER_ONLY
-bin_PROGRAMS += seaf-daemon set-perm
+bin_PROGRAMS += seaf-daemon
 endif
 
 proc_headers = $(addprefix processors/, \
@@ -59,6 +59,7 @@ noinst_HEADERS = \
 	seafile-config.h \
 	client-migrate.h \
 	http-tx-mgr.h \
+	set-perm.h \
 	$(proc_headers)
 
 if LINUX
@@ -82,6 +83,7 @@ common_src = \
 	../common/seafile-crypt.c ../common/diff-simple.c $(wt_monitor_src) \
 	clone-mgr.c \
 	seafile-config.c \
+	set-perm.c \
 	../common/branch-mgr.c ../common/fs-mgr.c \
 	repo-mgr.c ../common/commit-mgr.c \
 	../common/log.c ../common/object-list.c \
@@ -131,11 +133,11 @@ seaf_daemon_LDADD = $(top_builddir)/lib/libseafile_common.la \
 
 seaf_daemon_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
 
-set_perm_SOURCES = set-perm.c
+# set_perm_SOURCES = set-perm.c
 
-set_perm_LDADD = $(top_builddir)/lib/libseafile_common.la @GLIB2_LIBS@
+# set_perm_LDADD = $(top_builddir)/lib/libseafile_common.la @GLIB2_LIBS@
 
-set_perm_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
+# set_perm_LDFLAGS = @STATIC_COMPILE@ @CONSOLE@
 
 # seaf_tool_CFLAGS = $(AM_CFLAGS) -DSEAF_TOOL
 

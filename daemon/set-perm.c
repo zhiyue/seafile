@@ -1,5 +1,15 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#include "common.h"
+
+#include "utils.h"
+#define DEBUG_FLAG SEAFILE_DEBUG_SYNC
+#include "log.h"
+
+#include "set-perm.h"
+
+#ifdef WIN32
+
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x501
 #endif
@@ -7,16 +17,6 @@
 #include <windows.h>
 #include <AccCtrl.h>
 #include <AclApi.h>
-#include <stdio.h>
-
-#include "utils.h"
-#include "log.h"
-
-enum SeafPathPerm {
-    SEAF_PATH_PERM_RO = 0,
-    SEAF_PATH_PERM_RW,
-};
-typedef enum SeafPathPerm SeafPathPerm;
 
 #define WIN32_WRITE_ACCESS_MASK (FILE_WRITE_DATA | FILE_ADD_FILE | FILE_APPEND_DATA | \
                                  FILE_ADD_SUBDIRECTORY | FILE_WRITE_EA | \
@@ -67,8 +67,8 @@ unset_permissions (PACL dacl)
     return 0;
 }
 
-static int
-set_path_permission (const char *path, SeafPathPerm perm)
+int
+seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursive)
 {
     wchar_t *wpath = NULL;
     int ret = 0;
@@ -78,6 +78,9 @@ set_path_permission (const char *path, SeafPathPerm perm)
     EXPLICIT_ACCESS ea;
 
     g_return_val_if_fail (perm == SEAF_PATH_PERM_RO || perm == SEAF_PATH_PERM_RW, -1);
+
+    seaf_debug ("set permission for %s, perm: %d, recursive: %d\n",
+                path, perm, recursive);
 
     wpath = win32_long_path (path);
     if (!wpath)
@@ -90,7 +93,7 @@ set_path_permission (const char *path, SeafPathPerm perm)
         seaf_warning( "GetNamedSecurityInfo Error for path %s: %u\n", path, res );
         ret = -1;
         goto cleanup;
-    }  
+    }
 
     unset_permissions (old_dacl);
 
@@ -116,13 +119,26 @@ set_path_permission (const char *path, SeafPathPerm perm)
 
     // Attach the new ACL as the object's DACL.
 
-    res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
-                                DACL_SECURITY_INFORMATION,
-                                NULL, NULL, new_dacl, NULL);
-    if (ERROR_SUCCESS != res)  {
-        seaf_warning( "SetNamedSecurityInfo Error %u\n", res );
-        ret = -1;
-        goto cleanup;
+    if (recursive) {
+        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+                                    DACL_SECURITY_INFORMATION,
+                                    NULL, NULL, new_dacl, NULL);
+        if (ERROR_SUCCESS != res)  {
+            seaf_warning( "SetNamedSecurityInfo Error %u\n", res );
+            ret = -1;
+            goto cleanup;
+        }
+    } else {
+        SECURITY_DESCRIPTOR new_sd;
+
+        InitializeSecurityDescriptor (&new_sd, SECURITY_DESCRIPTOR_REVISION);
+        SetSecurityDescriptorDacl (&new_sd, TRUE, new_dacl, FALSE);
+
+        if (!SetFileSecurityW (wpath, DACL_SECURITY_INFORMATION, &new_sd)) {
+            seaf_warning ("SetFileSecurity Error %u\n", GetLastError());
+            ret = -1;
+            goto cleanup;
+        }
     }
 
  cleanup:
@@ -134,14 +150,17 @@ set_path_permission (const char *path, SeafPathPerm perm)
     return ret;
 }
 
-static int
-unset_path_permission (const char *path)
+int
+seaf_unset_path_permission (const char *path, gboolean recursive)
 {
     wchar_t *wpath = NULL;
     int ret = 0;
     DWORD res = 0;
     PACL old_dacl = NULL, new_dacl = NULL;
     PSECURITY_DESCRIPTOR sd = NULL;
+
+    seaf_debug ("unset permission for %s, recursive: %d\n",
+                path, recursive);
 
     wpath = win32_long_path (path);
     if (!wpath)
@@ -154,7 +173,7 @@ unset_path_permission (const char *path)
         seaf_warning( "GetNamedSecurityInfo Error %u\n", res );
         ret = -1;
         goto cleanup;
-    }  
+    }
 
     // Create a new copy of the old ACL
 
@@ -169,13 +188,26 @@ unset_path_permission (const char *path)
 
     // Update path's ACL
 
-    res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
-                                DACL_SECURITY_INFORMATION,
-                                NULL, NULL, new_dacl, NULL);
-    if (ERROR_SUCCESS != res)  {
-        seaf_warning( "SetNamedSecurityInfo Error %u\n", res );
-        ret = -1;
-        goto cleanup;
+    if (recursive) {
+        res = SetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+                                    DACL_SECURITY_INFORMATION,
+                                    NULL, NULL, new_dacl, NULL);
+        if (ERROR_SUCCESS != res)  {
+            seaf_warning( "SetNamedSecurityInfo Error %u\n", res );
+            ret = -1;
+            goto cleanup;
+        }
+    } else {
+        SECURITY_DESCRIPTOR new_sd;
+
+        InitializeSecurityDescriptor (&new_sd, SECURITY_DESCRIPTOR_REVISION);
+        SetSecurityDescriptorDacl (&new_sd, TRUE, new_dacl, FALSE);
+
+        if (!SetFileSecurityW (wpath, DACL_SECURITY_INFORMATION, &new_sd)) {
+            seaf_warning ("SetFileSecurity Error %u\n", GetLastError());
+            ret = -1;
+            goto cleanup;
+        }
     }
 
  cleanup:
@@ -187,44 +219,89 @@ unset_path_permission (const char *path)
     return ret;
 }
 
-static char **
-get_argv_utf8 (int *argc)
+SeafPathPerm
+seaf_get_path_permission (const char *path)
 {
-    int i = 0;
-    char **argv = NULL;
-    const wchar_t *cmdline = NULL;
-    wchar_t **argv_w = NULL;
+    wchar_t *wpath = NULL;
+    SeafPathPerm ret = SEAF_PATH_PERM_UNKNOWN;
+    DWORD res = 0;
+    PACL dacl = NULL;
+    PSECURITY_DESCRIPTOR sd = NULL;
 
-    cmdline = GetCommandLineW();
-    argv_w = CommandLineToArgvW (cmdline, argc); 
-    if (!argv_w) {
-        printf("failed to CommandLineToArgvW(), GLE=%lu\n", GetLastError());
-        return NULL;
+    wpath = win32_long_path (path);
+    if (!wpath)
+        return ret;
+
+    res = GetNamedSecurityInfoW(wpath, SE_FILE_OBJECT, 
+                                DACL_SECURITY_INFORMATION,
+                                NULL, NULL, &dacl, NULL, &sd);
+    if (ERROR_SUCCESS != res) {
+        seaf_warning( "GetNamedSecurityInfo Error %u\n", res );
+        goto cleanup;
     }
 
-    argv = (char **)malloc (sizeof(char*) * (*argc));
-    for (i = 0; i < *argc; i++) {
-        argv[i] = wchar_to_utf8 (argv_w[i]);
+    ACL_SIZE_INFORMATION size_info;
+
+    if (!GetAclInformation (dacl, &size_info,
+                            sizeof(size_info), AclSizeInformation)) {
+        seaf_warning ("GetAclInformation Error: %u\n", GetLastError());
+        goto cleanup;
     }
 
-    return argv;
+    DWORD i;
+    ACE_HEADER *ace;
+    ACCESS_DENIED_ACE *deny_ace;
+    ACCESS_ALLOWED_ACE *allowed_ace;
+    for (i = 0; i < size_info.AceCount; ++i) {
+        if (!GetAce(dacl, i, (void**)&ace)) {
+            seaf_warning ("GetAce Error: %u\n", GetLastError());
+            goto cleanup;
+        }
+
+        // Skip inherited ACEs.
+        if (ace->AceFlags & INHERITED_ACE)
+            continue;
+
+        if (ace->AceType == ACCESS_DENIED_ACE_TYPE) {
+            deny_ace = (ACCESS_DENIED_ACE *)ace;
+            if (deny_ace->Mask == WIN32_WRITE_ACCESS_MASK) {
+                ret = SEAF_PATH_PERM_RO;
+                break;
+            }
+        } else if (ace->AceType == ACCESS_ALLOWED_ACE_TYPE) {
+            allowed_ace = (ACCESS_ALLOWED_ACE *)ace;
+            if (allowed_ace->Mask == WIN32_WRITE_ACCESS_MASK) {
+                ret = SEAF_PATH_PERM_RW;
+                break;
+            }
+        }
+    }
+
+cleanup:
+    g_free (wpath);
+    if(sd != NULL) 
+        LocalFree((HLOCAL) sd);
+    return ret;
 }
 
-int main (int argc, char **argv)
+#else
+
+int
+seaf_set_path_permission (const char *path, SeafPathPerm perm, gboolean recursive)
 {
-    argv = get_argv_utf8 (&argc);
-
-    if (argc != 3) {
-        printf ("usage: set-perm [-r|-w|-u] path\n");
-        exit(1);
-    }
-
-    if (strcmp(argv[1], "-r") == 0)
-        return set_path_permission (argv[2], SEAF_PATH_PERM_RO);
-    else if (strcmp (argv[1], "-w") == 0)
-        return set_path_permission (argv[2], SEAF_PATH_PERM_RW);
-    else if (strcmp (argv[1], "-u") == 0)
-        return unset_path_permission (argv[2]);
-
     return 0;
 }
+
+int
+seaf_unset_path_permission (const char *path, gboolean recursive)
+{
+    return 0;
+}
+
+SeafPathPerm
+seaf_get_path_permission (const char *path)
+{
+    return SEAF_PATH_PERM_UNKNOWN;
+}
+
+#endif  /* WIN32 */

@@ -2287,6 +2287,48 @@ check_locked_files_done (void *vdata)
 
 #endif
 
+typedef struct _UpdateWtPermData {
+    HttpFolderPermRes *res;
+    GList *old_user_perms;
+    GList *old_group_perms;
+} UpdateWtPermData;
+
+static void *
+update_wt_perms_job (void *vdata)
+{
+    UpdateWtPermData *data = vdata;
+    HttpFolderPermRes *res = data->res;
+
+    SeafRepo *repo = seaf_repo_manager_get_repo (seaf->repo_mgr,
+                                                 res->repo_id);
+    if (!repo) {
+        seaf_warning ("Failed to get repo %s.\n", res->repo_id);
+        return vdata;
+    }
+
+    seaf_repo_manager_set_worktree_folder_perms (seaf->repo_mgr,
+                                                 res->repo_id,
+                                                 repo->worktree,
+                                                 data->old_user_perms,
+                                                 data->old_group_perms,
+                                                 res->user_perms,
+                                                 res->group_perms);
+
+    return vdata;
+}
+
+static void
+update_wt_perms_done (void *vdata)
+{
+    UpdateWtPermData *data = vdata;
+
+    http_folder_perm_res_free (data->res);
+    g_list_free_full (data->old_user_perms, (GDestroyNotify)folder_perm_free);
+    g_list_free_full (data->old_group_perms, (GDestroyNotify)folder_perm_free);
+
+    g_free (data);
+}
+
 static void
 check_folder_perms_done (HttpFolderPerms *result, void *user_data)
 {
@@ -2294,6 +2336,8 @@ check_folder_perms_done (HttpFolderPerms *result, void *user_data)
     GList *ptr;
     HttpFolderPermRes *res;
     gint64 now = (gint64)time(NULL);
+    SyncInfo *info;
+    UpdateWtPermData *data;
 
     server_state->checking_folder_perms = FALSE;
 
@@ -2309,6 +2353,26 @@ check_folder_perms_done (HttpFolderPerms *result, void *user_data)
 
     for (ptr = result->results; ptr; ptr = ptr->next) {
         res = ptr->data;
+
+        info = get_sync_info (seaf->sync_mgr, res->repo_id);
+        if (info->in_sync)
+            continue;
+
+#ifdef WIN32
+        data = g_new0 (UpdateWtPermData, 1);
+        data->res = http_folder_perm_res_copy (res);
+        data->old_user_perms = seaf_repo_manager_load_folder_perms(seaf->repo_mgr,
+                                                                   res->repo_id,
+                                                                   FOLDER_PERM_TYPE_USER);
+        data->old_group_perms = seaf_repo_manager_load_folder_perms(seaf->repo_mgr,
+                                                                    res->repo_id,
+                                                                    FOLDER_PERM_TYPE_GROUP);
+
+        ccnet_job_manager_schedule_job (seaf->job_mgr,
+                                        update_wt_perms_job,
+                                        update_wt_perms_done,
+                                        data);
+#endif
 
         seaf_repo_manager_update_folder_perms (seaf->repo_mgr, res->repo_id,
                                                FOLDER_PERM_TYPE_USER,

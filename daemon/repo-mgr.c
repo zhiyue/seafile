@@ -29,6 +29,8 @@
 #include "unpack-trees.h"
 #include "diff-simple.h"
 
+#include "set-perm.h"
+
 #include "db.h"
 
 #define INDEX_DIR "index"
@@ -290,6 +292,21 @@ folder_perm_free (FolderPerm *perm)
     g_free (perm);
 }
 
+FolderPerm *
+folder_perm_copy (FolderPerm *perm)
+{
+    FolderPerm *copy;
+
+    if (!perm)
+        return NULL;
+
+    copy = g_new0 (FolderPerm, 1);
+    copy->path = g_strdup(perm->path);
+    copy->permission = g_strdup(perm->permission);
+
+    return copy;
+}
+
 int
 seaf_repo_manager_update_folder_perms (SeafRepoManager *mgr,
                                        const char *repo_id,
@@ -521,6 +538,149 @@ is_path_writable (GList *user_perms,
         return TRUE;
     else
         return FALSE;
+}
+
+/*
+ * Group permissions can be "shadowed" by user permissions.
+ * For example, group perm for '/a/b/c' can be shadowed by user perm for '/a/b'.
+ * This function returns a list of permissions that are effective.
+ * The returned list only copy the pointers to the permission structure.
+ * So don't try to free the data contained in the returned list.
+ */
+static GList *
+get_effective_perms (GList *user_perms, GList *group_perms)
+{
+    GList *res = NULL;
+    GList *ptr;
+    FolderPerm *perm;
+    char *perm_str = NULL;
+
+    res = g_list_copy (user_perms);
+
+    for (ptr = group_perms; ptr; ptr = ptr->next) {
+        perm = ptr->data;
+        perm_str = lookup_folder_perm (user_perms, perm->path);
+        if (!perm_str)
+            res = g_list_append (res, perm);
+    }
+
+    res = g_list_sort (res, comp_folder_perms);
+
+    return res;
+}
+
+/*
+ * Returns difference between old and new "effective" permission.
+ * It assumes the input lists are sorted in descending order.
+ */
+static void
+diff_folder_perms (GList *old_eperms, GList *new_eperms,
+                   GList **add_perms, GList **del_perms, GList **mod_perms)
+{
+    GList *ptr1, *ptr2;
+    FolderPerm *old, *new;
+    int rc;
+
+    ptr1 = old_eperms;
+    ptr2 = new_eperms;
+    while (ptr1 != NULL && ptr2 != NULL) {
+        old = ptr1->data;
+        new = ptr2->data;
+        rc = strcmp (old->path, new->path);
+        if (rc == 0) {
+            if (strcmp(old->permission, new->permission) != 0)
+                *mod_perms = g_list_append (*mod_perms, new);
+            ptr1 = ptr1->next;
+            ptr2 = ptr2->next;
+        } else if (rc < 0) {
+            *add_perms = g_list_append (*add_perms, new);
+            ptr2 = ptr2->next;
+        } else {
+            *del_perms = g_list_append (*del_perms, old);
+            ptr1 = ptr1->next;
+        }
+    }
+
+    if (ptr1)
+        *del_perms = g_list_concat (*del_perms, g_list_copy(ptr1));
+    else if (ptr2)
+        *add_perms = g_list_concat (*add_perms, g_list_copy(ptr2));
+}
+
+inline static gboolean
+path_permission_consistent (const char *perm, SeafPathPerm wt_perm)
+{
+    return ((strcmp(perm, "rw") == 0 && wt_perm == SEAF_PATH_PERM_RW) ||
+            (strcmp(perm, "r") == 0 && wt_perm == SEAF_PATH_PERM_RO));
+}
+
+static int
+update_path_permission_if_changed (const char *path, FolderPerm *perm)
+{
+    SeafPathPerm wt_perm;
+    int ret = 0;
+
+    wt_perm = seaf_get_path_permission (path);
+    if (!path_permission_consistent (perm->permission, wt_perm)) {
+        if (strcmp (perm->permission, "rw") == 0)
+            ret = seaf_set_path_permission (path, SEAF_PATH_PERM_RW, TRUE);
+        else
+            ret = seaf_set_path_permission (path, SEAF_PATH_PERM_RO, TRUE);
+    }
+
+    return ret;
+}
+
+int
+seaf_repo_manager_set_worktree_folder_perms (SeafRepoManager *mgr,
+                                             const char *repo_id,
+                                             const char *worktree,
+                                             GList *old_user_perms,
+                                             GList *old_group_perms,
+                                             GList *new_user_perms,
+                                             GList *new_group_perms)
+{
+    SeafRepo *repo = NULL;
+    GList *add_perms = NULL, *del_perms = NULL, *mod_perms = NULL;
+    GList *old_eperms = NULL, *new_eperms = NULL;
+    GList *ptr;
+    FolderPerm *perm;
+    char *fullpath = NULL;
+    int ret = 0;
+
+    old_eperms = get_effective_perms (old_user_perms, old_group_perms);
+    new_eperms = get_effective_perms (new_user_perms, new_group_perms);
+
+    diff_folder_perms (old_eperms, new_eperms,
+                       &add_perms, &del_perms, &mod_perms);
+
+    for (ptr = del_perms; ptr; ptr = ptr->next) {
+        perm = ptr->data;
+        fullpath = g_strconcat (worktree, perm->path, NULL);
+        if (seaf_unset_path_permission (fullpath, TRUE) < 0)
+            ret = -1;
+        g_free (fullpath);
+    }
+
+    /* To be robust, we traverse all paths in the effective permission list,
+     * if any permission is inconsistent with permission in worktree, update it.
+     */
+    for (ptr = new_eperms; ptr; ptr = ptr->next) {
+        perm = ptr->data;
+        fullpath = g_strconcat (worktree, perm->path, NULL);
+        if (update_path_permission_if_changed (fullpath, perm) < 0)
+            ret = -1;
+        g_free (fullpath);
+    }
+
+    g_list_free (del_perms);
+    g_list_free (add_perms);
+    g_list_free (mod_perms);
+
+    g_list_free (old_eperms);
+    g_list_free (new_eperms);
+
+    return ret;
 }
 
 gboolean

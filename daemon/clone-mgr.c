@@ -18,6 +18,8 @@
 
 #include "processors/checkff-proc.h"
 
+#include "set-perm.h"
+
 #define CLONE_DB "clone.db"
 
 #define CHECK_CONNECT_INTERVAL 5 /* 5s */
@@ -2294,12 +2296,75 @@ on_checkout_done (CheckoutTask *ctask, SeafRepo *repo, void *data)
     }
 }
 
+typedef struct _UpdateWtPermData {
+    CloneTask *task;
+    HttpFolderPermRes *res;
+} UpdateWtPermData;
+
+static void *
+update_wt_perms_job (void *vdata)
+{
+    UpdateWtPermData *data = vdata;
+    CloneTask *task = data->task;
+    HttpFolderPermRes *res = data->res;
+
+    if (task->is_readonly)
+        seaf_set_path_permission (data->task->worktree,
+                                  SEAF_PATH_PERM_RO,
+                                  TRUE);
+
+    seaf_repo_manager_set_worktree_folder_perms (seaf->repo_mgr,
+                                                 res->repo_id,
+                                                 task->worktree,
+                                                 NULL, NULL,
+                                                 res->user_perms,
+                                                 res->group_perms);
+
+    return vdata;
+}
+
+static void
+update_wt_perms_done (void *vdata)
+{
+    UpdateWtPermData *data = vdata;
+
+    SeafRepo *repo = seaf_repo_manager_get_repo (seaf->repo_mgr,
+                                                 data->task->repo_id);
+    if (repo == NULL) {
+        seaf_warning ("[Clone mgr] cannot find repo %s after fetched.\n", 
+                      data->task->repo_id);
+        transition_to_error (data->task, CLONE_ERROR_INTERNAL);
+        return;
+    }
+
+    mark_clone_done_v2 (repo, data->task);
+
+    http_folder_perm_res_free (data->res);
+
+    g_free (data);
+}
+
+static void
+update_worktree_perms (CloneTask *task, HttpFolderPermRes *res)
+{
+    UpdateWtPermData *data;
+
+    data = g_new0 (UpdateWtPermData, 1);
+    data->task = task;
+    data->res = http_folder_perm_res_copy (res);
+
+    ccnet_job_manager_schedule_job (seaf->job_mgr,
+                                    update_wt_perms_job,
+                                    update_wt_perms_done,
+                                    data);
+}
+
 static void
 check_folder_perms_done (HttpFolderPerms *result, void *user_data)
 {
     CloneTask *task = user_data;
     GList *ptr;
-    HttpFolderPermRes *res;
+    HttpFolderPermRes *res = NULL;
 
     SeafRepo *repo = seaf_repo_manager_get_repo (seaf->repo_mgr,
                                                  task->repo_id);
@@ -2317,19 +2382,27 @@ check_folder_perms_done (HttpFolderPerms *result, void *user_data)
     for (ptr = result->results; ptr; ptr = ptr->next) {
         res = ptr->data;
 
-        seaf_repo_manager_update_folder_perms (seaf->repo_mgr, res->repo_id,
-                                               FOLDER_PERM_TYPE_USER,
-                                               res->user_perms);
-        seaf_repo_manager_update_folder_perms (seaf->repo_mgr, res->repo_id,
-                                               FOLDER_PERM_TYPE_GROUP,
-                                               res->group_perms);
-        seaf_repo_manager_update_folder_perm_timestamp (seaf->repo_mgr,
-                                                        res->repo_id,
-                                                        res->timestamp);
+        /* only handle the cloned repo. */
+        if (strcmp (res->repo_id, task->repo_id) == 0) {
+            seaf_repo_manager_update_folder_perms (seaf->repo_mgr, res->repo_id,
+                                                   FOLDER_PERM_TYPE_USER,
+                                                   res->user_perms);
+            seaf_repo_manager_update_folder_perms (seaf->repo_mgr, res->repo_id,
+                                                   FOLDER_PERM_TYPE_GROUP,
+                                                   res->group_perms);
+            seaf_repo_manager_update_folder_perm_timestamp (seaf->repo_mgr,
+                                                            res->repo_id,
+                                                            res->timestamp);
+            break;
+        }
     }
 
 out:
+#ifdef WIN32
+    update_worktree_perms (task, res);
+#else
     mark_clone_done_v2 (repo, task);
+#endif
 }
 
 static void

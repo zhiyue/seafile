@@ -486,6 +486,9 @@ typedef struct _FolderPerm {
 void
 folder_perm_free (FolderPerm *perm);
 
+FolderPerm *
+folder_perm_copy (FolderPerm *perm);
+
 int
 seaf_repo_manager_update_folder_perms (SeafRepoManager *mgr,
                                        const char *repo_id,
@@ -505,5 +508,14 @@ seaf_repo_manager_update_folder_perm_timestamp (SeafRepoManager *mgr,
 gint64
 seaf_repo_manager_get_folder_perm_timestamp (SeafRepoManager *mgr,
                                              const char *repo_id);
+
+int
+seaf_repo_manager_set_worktree_folder_perms (SeafRepoManager *mgr,
+                                             const char *repo_id,
+                                             const char *worktree,
+                                             GList *old_user_perms,
+                                             GList *old_group_perms,
+                                             GList *new_user_perms,
+                                             GList *new_group_perms);
 
 #endif

@@ -987,6 +987,30 @@ http_folder_perm_res_free (HttpFolderPermRes *res)
     g_free (res);
 }
 
+HttpFolderPermRes *
+http_folder_perm_res_copy (HttpFolderPermRes *res)
+{
+    HttpFolderPermRes *copy;
+    GList *ptr;
+    FolderPerm *perm;
+
+    copy = g_new0 (HttpFolderPermRes, 1);
+    memcpy (copy->repo_id, res->repo_id, 36);
+    copy->timestamp = res->timestamp;
+
+    for (ptr = res->user_perms; ptr; ptr = ptr->next) {
+        perm = ptr->data;
+        copy->user_perms = g_list_append (copy->user_perms, folder_perm_copy(perm));
+    }
+
+    for (ptr = res->group_perms; ptr; ptr = ptr->next) {
+        perm = ptr->data;
+        copy->group_perms = g_list_append (copy->group_perms, folder_perm_copy(perm));
+    }
+
+    return copy;
+}
+
 typedef struct {
     char *host;
     GList *requests;

@@ -179,6 +179,9 @@ http_folder_perm_req_free (HttpFolderPermReq *req);
 void
 http_folder_perm_res_free (HttpFolderPermRes *res);
 
+HttpFolderPermRes *
+http_folder_perm_res_copy (HttpFolderPermRes *res);
+
 struct _HttpFolderPerms {
     gboolean success;
     GList *results;             /* List of HttpFolderPermRes */
