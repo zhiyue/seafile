@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+#include <pthread.h>
+
 #include <ccnet.h>
 
 #include "db.h"
@@ -63,6 +65,9 @@ struct _SeafSyncManagerPriv {
 
     /* When FALSE, auto sync is globally disabled */
     gboolean   auto_sync_enabled;
+
+    GHashTable *active_paths;
+    pthread_mutex_t paths_lock;
 };
 
 static void
@@ -131,6 +136,11 @@ seaf_sync_manager_new (SeafileSession *seaf)
                                                        &exists);
     if (exists)
         mgr->upload_limit = upload_limit;
+
+    mgr->priv->active_paths = g_hash_table_new_full (g_str_hash, g_str_equal,
+                                                     g_free,
+                                                     (GDestroyNotify)g_hash_table_destroy);
+    pthread_mutex_init (&mgr->priv->paths_lock, NULL);
 
     return mgr;
 }
@@ -2454,6 +2464,14 @@ check_folder_permissions (SeafSyncManager *mgr, GList *repos)
     }
 }
 
+static void
+print_active_paths (SeafSyncManager *mgr)
+{
+    char *paths_json = seaf_sync_manager_list_active_paths_json(mgr);
+    seaf_message ("%s\n\n", paths_json);
+    g_free (paths_json);
+}
+
 static int
 auto_sync_pulse (void *vmanager)
 {
@@ -2461,6 +2479,8 @@ auto_sync_pulse (void *vmanager)
     GList *repos, *ptr;
     SeafRepo *repo;
     gint64 now;
+
+    print_active_paths (manager);
 
     repos = seaf_repo_manager_get_repo_list (manager->seaf->repo_mgr, -1, -1);
 
@@ -2851,4 +2871,135 @@ seaf_sync_manager_is_auto_sync_enabled (SeafSyncManager *mgr)
         return 1;
     else
         return 0;
+}
+
+void
+seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
+                                      const char *repo_id,
+                                      const char *path,
+                                      SyncStatus status)
+{
+    GHashTable *paths;
+
+    if (!repo_id || !path) {
+        seaf_warning ("BUG: empty repo_id or path.\n");
+        return;
+    }
+
+    if (status <= SYNC_STATUS_NONE || status >= N_SYNC_STATUS) {
+        seaf_warning ("BUG: invalid sync status %d.\n", status);
+        return;
+    }
+
+    pthread_mutex_lock (&mgr->priv->paths_lock);
+
+    paths = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    if (!paths) {
+        paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+        g_hash_table_insert (mgr->priv->active_paths, g_strdup(repo_id), paths);
+    }
+
+    SyncStatus existing = (SyncStatus) g_hash_table_lookup (paths, path);
+    if (existing != status)
+        g_hash_table_replace (paths, g_strdup(path), (void*)status);
+
+    pthread_mutex_unlock (&mgr->priv->paths_lock);
+}
+
+void
+seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
+                                      const char *repo_id,
+                                      const char *path)
+{
+    GHashTable *paths;
+
+    if (!repo_id || !path) {
+        seaf_warning ("BUG: empty repo_id or path.\n");
+        return;
+    }
+
+    pthread_mutex_lock (&mgr->priv->paths_lock);
+
+    paths = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    if (!paths) {
+        pthread_mutex_unlock (&mgr->priv->paths_lock);
+        return;
+    }
+
+    g_hash_table_remove (paths, path);
+
+    pthread_mutex_unlock (&mgr->priv->paths_lock);
+}
+
+static char *path_status_tbl[] = {
+    "none",
+    "syncing",
+    "error",
+    "ignored",
+    NULL,
+};
+
+static json_t *
+active_paths_to_json (GHashTable *paths)
+{
+    json_t *array = NULL, *obj = NULL;
+    GHashTableIter iter;
+    gpointer key, value;
+    char *path;
+    SyncStatus status;
+
+    array = json_array ();
+
+    g_hash_table_iter_init (&iter, paths);
+    while (g_hash_table_iter_next (&iter, &key, &value)) {
+        path = key;
+        status = (SyncStatus)value;
+
+        obj = json_object ();
+        json_object_set (obj, "path", json_string(path));
+        json_object_set (obj, "status", json_string(path_status_tbl[status]));
+
+        json_array_append (array, obj);
+    }
+
+    return array;
+}
+
+char *
+seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr)
+{
+    json_t *array = NULL, *obj = NULL, *path_array = NULL;
+    GHashTableIter iter;
+    gpointer key, value;
+    char *repo_id;
+    GHashTable *paths;
+    char *ret = NULL;
+
+    pthread_mutex_lock (&mgr->priv->paths_lock);
+
+    array = json_array ();
+
+    g_hash_table_iter_init (&iter, mgr->priv->active_paths);
+    while (g_hash_table_iter_next (&iter, &key, &value)) {
+        repo_id = key;
+        paths = value;
+
+        obj = json_object();
+        path_array = active_paths_to_json (paths);
+        json_object_set (obj, "repo_id", json_string(repo_id));
+        json_object_set (obj, "paths", path_array);
+
+        json_array_append (array, obj);
+    }
+
+    pthread_mutex_unlock (&mgr->priv->paths_lock);
+
+    ret = json_dumps (array, JSON_INDENT(4));
+    if (!ret) {
+        seaf_warning ("Failed to convert active paths to json\n");
+    }
+
+    json_decref (array);
+
+    return ret;
 }
