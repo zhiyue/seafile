@@ -2467,9 +2467,13 @@ check_folder_permissions (SeafSyncManager *mgr, GList *repos)
 static void
 print_active_paths (SeafSyncManager *mgr)
 {
-    char *paths_json = seaf_sync_manager_list_active_paths_json(mgr);
-    seaf_message ("%s\n\n", paths_json);
-    g_free (paths_json);
+    int n = seaf_sync_manager_active_paths_number(mgr);
+    seaf_message ("%d active paths\n\n", n);
+    if (n < 10) {
+        char *paths_json = seaf_sync_manager_list_active_paths_json (mgr);
+        seaf_message ("%s\n", paths_json);
+        g_free (paths_json);
+    }
 }
 
 static int
@@ -3000,6 +3004,23 @@ seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr)
     }
 
     json_decref (array);
+
+    return ret;
+}
+
+int
+seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
+{
+    GHashTableIter iter;
+    gpointer key, value;
+    GHashTable *paths;
+    int ret = 0;
+
+    g_hash_table_iter_init (&iter, mgr->priv->active_paths);
+    while (g_hash_table_iter_next (&iter, &key, &value)) {
+        paths = value;
+        ret += g_hash_table_size(paths);
+    }
 
     return ret;
 }

@@ -1462,13 +1462,13 @@ check_quota_and_active_paths_diff_files (int n, const char *basedir,
         data->delta += (size1 - size2);
 
         if (strcmp(file1->id, file2->id) != 0) {
-            path = g_strconcat(basedir, "/", file1->name, NULL);
+            path = g_strconcat(basedir, file1->name, NULL);
             g_hash_table_replace (data->active_paths, path, path);
         }
     } else if (file1 && !file2) {
         data->delta += file1->size;
 
-        path = g_strconcat (basedir, "/", file1->name, NULL);
+        path = g_strconcat (basedir, file1->name, NULL);
         g_hash_table_replace (data->active_paths, path, path);
     } else if (!file1 && file2) {
         data->delta -= file2->size;

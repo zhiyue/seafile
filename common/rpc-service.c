@@ -80,6 +80,7 @@ convert_repo (SeafRepo *r)
 #ifndef SEAFILE_SERVER
     g_object_set (repo, "worktree", r->worktree,
                   "relay-id", r->relay_id,
+                  "worktree-invalid", r->worktree_invalid,
                   "last-sync-time", r->last_sync_time,
                   "auto-sync", r->auto_sync,
                   NULL);

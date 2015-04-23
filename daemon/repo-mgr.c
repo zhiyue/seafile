@@ -1073,10 +1073,10 @@ add_file (const char *repo_id,
         return ret;
     }
 
-    if (options->startup_scan) {
+    if (options && options->startup_scan) {
         struct cache_entry *ce;
         ce = index_name_exists (istate, path, strlen(path), 0);
-        if (ie_match_stat(ce, st, 0) != 0)
+        if (!ce || ie_match_stat(ce, st, 0) != 0)
             seaf_sync_manager_update_active_path (seaf->sync_mgr,
                                                   repo_id,
                                                   path,
@@ -1171,7 +1171,7 @@ iter_dir_cb (wchar_t *full_parent_w,
 
     if (data->ignored ||
         should_ignore(data->full_parent, dname, params->ignore_list)) {
-        if (options->startup_scan) {
+        if (options && options->startup_scan) {
             if (fdata->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
                 add_dir_recursive (path, full_path, &st, params, TRUE);
             else
@@ -1237,14 +1237,21 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
     }
 
     /* Update active path status for empty dir */
-    if (options->startup_scan && ret == 0) {
-        SyncStatus status = SYNC_STATUS_SYNCING;
-        if (ignored)
-            status = SYNC_STATUS_IGNORED;
-        seaf_sync_manager_update_active_path (seaf->sync_mgr,
-                                              params->repo_id,
-                                              path,
-                                              status);
+    if (options && options->startup_scan && ret == 0) {
+        if (ignored) {
+            seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                                  params->repo_id,
+                                                  path,
+                                                  SYNC_STATUS_IGNORED);
+        } else {
+            struct cache_entry *ce = index_name_exists (params->istate, path,
+                                                        strlen(path), 0);
+            if (!ce)
+                seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                                      params->repo_id,
+                                                      path,
+                                                      SYNC_STATUS_SYNCING);
+        }
     }
 
     if (data.n == 0 && path[0] != 0 && !params->ignore_empty_dir &&
@@ -1985,8 +1992,8 @@ typedef struct _UpdatePathData {
     struct index_state *istate;
     GList *ignore_list;
 
-    char *parent;
-    char *full_parent;
+    const char *parent;
+    const char *full_parent;
     gboolean ignored;
 } UpdatePathData;
 
@@ -2004,7 +2011,7 @@ update_active_file (const char *repo_id,
                                               SYNC_STATUS_IGNORED);
     } else {
         struct cache_entry *ce = index_name_exists(istate, path, strlen(path), 0);
-        if (!ce || ie_match_stat(ce, &st, 0) != 0)
+        if (!ce || ie_match_stat(ce, st, 0) != 0)
             seaf_sync_manager_update_active_path (seaf->sync_mgr,
                                                   repo_id,
                                                   path,
@@ -2035,7 +2042,7 @@ update_active_path_cb (wchar_t *full_parent_w,
     dname = g_utf16_to_utf8 (fdata->cFileName, -1, NULL, NULL, NULL);
     path = g_build_path ("/", upd_data->parent, dname, NULL);
 
-    if (upd_data->ignored || should_ignore (full_parent, dname, upd_data->ignore_list))
+    if (upd_data->ignored || should_ignore (upd_data->full_parent, dname, upd_data->ignore_list))
         ignored = TRUE;
 
     seaf_stat_from_find_data (fdata, &st);
@@ -2145,6 +2152,8 @@ process_active_path (SeafRepo *repo, const char *path,
         g_free (fullpath);
         return;
     }
+
+    seaf_message ("Processing active path %s\n", path);
 
     if (check_full_path_ignore (repo->worktree, path, ignore_list))
         ignored = TRUE;

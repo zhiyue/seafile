@@ -173,4 +173,7 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
 char *
 seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr);
 
+int
+seaf_sync_manager_active_paths_number (SeafSyncManager *mgr);
+
 #endif
