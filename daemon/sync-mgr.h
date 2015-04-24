@@ -163,12 +163,19 @@ void
 seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
                                       const char *path,
+                                      int mode,
                                       SyncStatus status);
 
 void
 seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
                                       const char *path);
+
+SyncStatus
+seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
+                                        const char *repo_id,
+                                        const char *path,
+                                        gboolean is_dir);
 
 char *
 seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr);

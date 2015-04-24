@@ -1463,13 +1463,13 @@ check_quota_and_active_paths_diff_files (int n, const char *basedir,
 
         if (strcmp(file1->id, file2->id) != 0) {
             path = g_strconcat(basedir, file1->name, NULL);
-            g_hash_table_replace (data->active_paths, path, path);
+            g_hash_table_replace (data->active_paths, path, (void*)(long)S_IFREG);
         }
     } else if (file1 && !file2) {
         data->delta += file1->size;
 
         path = g_strconcat (basedir, file1->name, NULL);
-        g_hash_table_replace (data->active_paths, path, path);
+        g_hash_table_replace (data->active_paths, path, (void*)(long)S_IFREG);
     } else if (!file1 && file2) {
         data->delta -= file2->size;
     }
@@ -1490,7 +1490,7 @@ check_quota_and_active_paths_diff_dirs (int n, const char *basedir,
     /* When a new empty dir is created. */
     if (!dir2 && dir1 && strcmp(dir1->id, EMPTY_SHA1) == 0) {
         path = g_strconcat (basedir, "/", dir1->name, NULL);
-        g_hash_table_replace (data->active_paths, path, path);
+        g_hash_table_replace (data->active_paths, path, (void*)(long)S_IFDIR);
     }
 
     return 0;
@@ -2328,9 +2328,11 @@ update_path_sync_status (gpointer key, gpointer value, gpointer user_data)
 {
     HttpTxTask *task = user_data;
     char *path = key;
+    int mode = (int)(long)value;
     seaf_sync_manager_update_active_path (seaf->sync_mgr,
                                           task->repo_id,
                                           path,
+                                          mode,
                                           SYNC_STATUS_SYNCING);
 }
 

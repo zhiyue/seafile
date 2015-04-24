@@ -21,6 +21,8 @@
 #include "mq-mgr.h"
 #include "utils.h"
 
+#include "sync-status-tree.h"
+
 #define DEBUG_FLAG SEAFILE_DEBUG_SYNC
 #include "log.h"
 
@@ -69,6 +71,13 @@ struct _SeafSyncManagerPriv {
     GHashTable *active_paths;
     pthread_mutex_t paths_lock;
 };
+
+struct _ActivePathsInfo {
+    GHashTable *paths;
+    struct SyncStatusTree *syncing_tree;
+    struct SyncStatusTree *ignore_tree;
+};
+typedef struct _ActivePathsInfo ActivePathsInfo;
 
 static void
 start_sync (SeafSyncManager *manager, SeafRepo *repo,
@@ -2877,13 +2886,26 @@ seaf_sync_manager_is_auto_sync_enabled (SeafSyncManager *mgr)
         return 0;
 }
 
+static ActivePathsInfo *
+active_paths_info_new ()
+{
+    ActivePathsInfo *info = g_new0 (ActivePathsInfo, 1);
+
+    info->paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+    info->syncing_tree = sync_status_tree_new ();
+    info->ignore_tree = sync_status_tree_new ();
+
+    return info;
+}
+
 void
 seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
                                       const char *path,
+                                      int mode,
                                       SyncStatus status)
 {
-    GHashTable *paths;
+    ActivePathsInfo *info;
 
     if (!repo_id || !path) {
         seaf_warning ("BUG: empty repo_id or path.\n");
@@ -2897,15 +2919,31 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
 
-    paths = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
-    if (!paths) {
-        paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
-        g_hash_table_insert (mgr->priv->active_paths, g_strdup(repo_id), paths);
+    info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    if (!info) {
+        info = active_paths_info_new ();
+        g_hash_table_insert (mgr->priv->active_paths, g_strdup(repo_id), info);
     }
 
-    SyncStatus existing = (SyncStatus) g_hash_table_lookup (paths, path);
-    if (existing != status)
-        g_hash_table_replace (paths, g_strdup(path), (void*)status);
+    SyncStatus existing = (SyncStatus) g_hash_table_lookup (info->paths, path);
+    if (!existing) {
+        g_hash_table_insert (info->paths, g_strdup(path), (void*)status);
+        if (status == SYNC_STATUS_SYNCING)
+            sync_status_tree_add (info->syncing_tree, path, mode);
+        else if (status == SYNC_STATUS_IGNORED)
+            sync_status_tree_add (info->ignore_tree, path, mode);
+    } else if (existing != status) {
+        g_hash_table_replace (info->paths, g_strdup(path), (void*)status);
+        if (existing == SYNC_STATUS_SYNCING &&
+            status == SYNC_STATUS_IGNORED) {
+            sync_status_tree_del (info->syncing_tree, path);
+            sync_status_tree_add (info->ignore_tree, path, mode);
+        } else if (existing == SYNC_STATUS_IGNORED &&
+                   status == SYNC_STATUS_SYNCING) {
+            sync_status_tree_del (info->ignore_tree, path);
+            sync_status_tree_add (info->syncing_tree, path, mode);
+        }
+    }
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
@@ -2915,7 +2953,7 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
                                       const char *path)
 {
-    GHashTable *paths;
+    ActivePathsInfo *info;
 
     if (!repo_id || !path) {
         seaf_warning ("BUG: empty repo_id or path.\n");
@@ -2924,15 +2962,52 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
 
-    paths = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
-    if (!paths) {
+    info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    if (!info) {
         pthread_mutex_unlock (&mgr->priv->paths_lock);
         return;
     }
 
-    g_hash_table_remove (paths, path);
+    g_hash_table_remove (info->paths, path);
+    sync_status_tree_del (info->syncing_tree, path);
+    sync_status_tree_del (info->ignore_tree, path);
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
+}
+
+SyncStatus
+seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
+                                        const char *repo_id,
+                                        const char *path,
+                                        gboolean is_dir)
+{
+    ActivePathsInfo *info;
+    SyncStatus ret = SYNC_STATUS_NONE;
+
+    if (!repo_id || !path) {
+        seaf_warning ("BUG: empty repo_id or path.\n");
+        return SYNC_STATUS_NONE;
+    }
+
+    pthread_mutex_lock (&mgr->priv->paths_lock);
+
+    info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    if (!info) {
+        pthread_mutex_unlock (&mgr->priv->paths_lock);
+        return SYNC_STATUS_NONE;
+    }
+
+    ret = (SyncStatus) g_hash_table_lookup (info->paths, path);
+    if (is_dir && (ret == SYNC_STATUS_NONE)) {
+        if (sync_status_tree_exists (info->syncing_tree, path))
+            ret = SYNC_STATUS_SYNCING;
+        else if (sync_status_tree_exists (info->ignore_tree, path))
+            ret = SYNC_STATUS_IGNORED;
+    }
+
+    pthread_mutex_unlock (&mgr->priv->paths_lock);
+
+    return ret;
 }
 
 static char *path_status_tbl[] = {
@@ -2976,7 +3051,7 @@ seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr)
     GHashTableIter iter;
     gpointer key, value;
     char *repo_id;
-    GHashTable *paths;
+    ActivePathsInfo *info;
     char *ret = NULL;
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
@@ -2986,10 +3061,10 @@ seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr)
     g_hash_table_iter_init (&iter, mgr->priv->active_paths);
     while (g_hash_table_iter_next (&iter, &key, &value)) {
         repo_id = key;
-        paths = value;
+        info = value;
 
         obj = json_object();
-        path_array = active_paths_to_json (paths);
+        path_array = active_paths_to_json (info->paths);
         json_object_set (obj, "repo_id", json_string(repo_id));
         json_object_set (obj, "paths", path_array);
 
@@ -3013,13 +3088,13 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
 {
     GHashTableIter iter;
     gpointer key, value;
-    GHashTable *paths;
+    ActivePathsInfo *info;
     int ret = 0;
 
     g_hash_table_iter_init (&iter, mgr->priv->active_paths);
     while (g_hash_table_iter_next (&iter, &key, &value)) {
-        paths = value;
-        ret += g_hash_table_size(paths);
+        info = value;
+        ret += g_hash_table_size(info->paths);
     }
 
     return ret;
