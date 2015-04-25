@@ -4,6 +4,8 @@
 
 #include "sync-status-tree.h"
 
+#include "log.h"
+
 struct _SyncStatusDir {
     GHashTable *dirents;        /* name -> dirent. */
 };

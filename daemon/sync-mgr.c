@@ -384,7 +384,7 @@ update_tx_state (void *vmanager)
 
 #ifdef WIN32
 static void *
-refreh_windows_explorer_thread (void *vdata);
+refresh_windows_explorer_thread (void *vdata);
 #endif
 
 int
@@ -2947,6 +2947,11 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
     info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
     if (!info) {
         repo = seaf_repo_manager_get_repo (seaf->repo_mgr, repo_id);
+        if (!repo) {
+            seaf_warning ("Failed to find repo %s\n", repo_id);
+            pthread_mutex_unlock (&mgr->priv->paths_lock);
+            return;
+        }
         info = active_paths_info_new (repo);
         g_hash_table_insert (mgr->priv->active_paths, g_strdup(repo_id), info);
     }
@@ -3131,12 +3136,11 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
 #define MAX_REFRESH_PATHS_PER_SEC 100
 
 static void *
-refreh_windows_explorer_thread (void *vdata)
+refresh_windows_explorer_thread (void *vdata)
 {
     GAsyncQueue *q = vdata;
     char *path;
     wchar_t *path_w;
-    int count = 0;
 
     while (1) {
         path = g_async_queue_pop (q);
@@ -3144,16 +3148,10 @@ refreh_windows_explorer_thread (void *vdata)
 
         SHChangeNotify (SHCNE_UPDATEITEM, SHCNF_PATH, path_w, NULL);
 
+        seaf_message ("Refresh %s\n", path);
+
         g_free (path);
         g_free (path_w);
-
-        seaf_message ("Refresh %s\n", path);
-        ++count;
-
-        if (count >= MAX_REFRESH_PATHS_PER_SEC) {
-            g_usleep (G_USEC_PER_SEC);
-            count = 0;
-        }
     }
 }
 
