@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include "seafile-session.h"
+
 #include "sync-status-tree.h"
 
 struct _SyncStatusDir {
@@ -17,6 +19,7 @@ typedef struct _SyncStatusDirent SyncStatusDirent;
 
 struct SyncStatusTree {
     SyncStatusDir *root;
+    char *worktree;
 };
 typedef struct SyncStatusTree SyncStatusTree;
 
@@ -66,10 +69,11 @@ sync_status_dirent_free (SyncStatusDirent *dirent)
 }
 
 SyncStatusTree *
-sync_status_tree_new ()
+sync_status_tree_new (const char *worktree)
 {
     SyncStatusTree *tree = g_new0(SyncStatusTree, 1);
     tree->root = sync_status_dir_new ();
+    tree->worktree = g_strdup(worktree);
     return tree;
 }
 
@@ -83,15 +87,21 @@ sync_status_tree_add (SyncStatusTree *tree,
     char *dname;
     SyncStatusDir *dir = tree->root;
     SyncStatusDirent *dirent;
+    GString *buf;
 
     dnames = g_strsplit (path, "/", 0);
     if (!dnames)
         return;
     n = g_strv_length (dnames);
 
+    buf = g_string_new ("");
+    g_string_append (buf, tree->worktree);
+
     for (i = 0; i < n; i++) {
         dname = dnames[i];
         dirent = g_hash_table_lookup (dir->dirents, dname);
+        g_string_append (buf, "/");
+        g_string_append (buf, dname);
         if (dirent) {
             if (S_ISDIR(dirent->mode)) {
                 if (i == (n-1)) {
@@ -111,10 +121,14 @@ sync_status_tree_add (SyncStatusTree *tree,
                 g_hash_table_insert (dir->dirents, g_strdup(dname), dirent);
                 dir = dirent->subdir;
             }
+#ifdef WIN32
+            seaf_sync_manager_add_refresh_path (seaf->sync_mgr, buf->str);
+#endif
         }
     }
 
 out:
+    g_string_free (buf, TRUE);
     g_strfreev (dnames);
 }
 
@@ -125,30 +139,45 @@ is_empty_dir (SyncStatusDirent *dirent)
 }
 
 static void
-delete_recursive (SyncStatusDir *dir, char **dnames, guint n, guint i)
+remove_item (SyncStatusDir *dir, const char *dname, const char *fullpath)
+{
+    g_hash_table_remove (dir->dirents, dname);
+#ifdef WIN32
+    seaf_sync_manager_add_refresh_path (seaf->sync_mgr, fullpath);
+#endif
+}
+
+static void
+delete_recursive (SyncStatusDir *dir, char **dnames, guint n, guint i,
+                  const char *base)
 {
     char *dname;
     SyncStatusDirent *dirent;
+    char *fullpath = NULL;
 
     dname = dnames[i];
+    fullpath = g_strconcat (base, "/", dname, NULL);
+
     dirent = g_hash_table_lookup (dir->dirents, dname);
     if (dirent) {
         if (S_ISDIR(dirent->mode)) {
             if (i == (n-1)) {
                 if (is_empty_dir(dirent))
-                    g_hash_table_remove (dir->dirents, dname);
+                    remove_item (dir, dname, fullpath);
             } else {
-                delete_recursive (dirent->subdir, dnames, n, ++i);
+                delete_recursive (dirent->subdir, dnames, n, ++i, fullpath);
                 /* If this dir becomes empty after deleting the entry below,
                  * remove the dir itself too.
                  */
                 if (is_empty_dir(dirent))
-                    g_hash_table_remove (dir->dirents, dname);
+                    remove_item (dir, dname, fullpath);
             }
         } else if (i == (n-1)) {
-            g_hash_table_remove (dir->dirents, dname);
+            remove_item (dir, dname, fullpath);
         }
     }
+
+    g_free (fullpath);
 }
 
 void
@@ -164,7 +193,7 @@ sync_status_tree_del (SyncStatusTree *tree,
         return;
     n = g_strv_length (dnames);
 
-    delete_recursive (dir, dnames, n, 0);
+    delete_recursive (dir, dnames, n, 0, tree->worktree);
 
 out:
     g_strfreev (dnames);

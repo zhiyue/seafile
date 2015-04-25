@@ -2164,8 +2164,6 @@ process_active_path (SeafRepo *repo, const char *path,
         return;
     }
 
-    seaf_message ("Processing active path %s\n", path);
-
     if (check_full_path_ignore (repo->worktree, path, ignore_list))
         ignored = TRUE;
 

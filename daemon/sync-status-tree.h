@@ -4,7 +4,7 @@
 struct SyncStatusTree;
 
 struct SyncStatusTree *
-sync_status_tree_new ();
+sync_status_tree_new (const char *worktree);
 
 /*
  * Add a @path into the @tree. If any directory along the path is missing,

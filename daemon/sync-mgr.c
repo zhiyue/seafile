@@ -23,6 +23,10 @@
 
 #include "sync-status-tree.h"
 
+#ifdef WIN32
+#include <shlobj.h>
+#endif
+
 #define DEBUG_FLAG SEAFILE_DEBUG_SYNC
 #include "log.h"
 
@@ -70,6 +74,10 @@ struct _SeafSyncManagerPriv {
 
     GHashTable *active_paths;
     pthread_mutex_t paths_lock;
+
+#ifdef WIN32
+    GAsyncQueue *refresh_paths;
+#endif
 };
 
 struct _ActivePathsInfo {
@@ -150,6 +158,10 @@ seaf_sync_manager_new (SeafileSession *seaf)
                                                      g_free,
                                                      (GDestroyNotify)g_hash_table_destroy);
     pthread_mutex_init (&mgr->priv->paths_lock, NULL);
+
+#ifdef WIN32
+    mgr->priv->refresh_paths = g_async_queue_new ();
+#endif
 
     return mgr;
 }
@@ -370,6 +382,11 @@ update_tx_state (void *vmanager)
     return TRUE;
 }
 
+#ifdef WIN32
+static void *
+refreh_windows_explorer_thread (void *vdata);
+#endif
+
 int
 seaf_sync_manager_start (SeafSyncManager *mgr)
 {
@@ -398,6 +415,13 @@ seaf_sync_manager_start (SeafSyncManager *mgr)
                       (GCallback)on_repo_http_fetched, mgr);
     g_signal_connect (seaf, "repo-http-uploaded",
                       (GCallback)on_repo_http_uploaded, mgr);
+
+#ifdef WIN32
+    ccnet_job_manager_schedule_job (seaf->job_mgr,
+                                    refresh_windows_explorer_thread,
+                                    NULL,
+                                    mgr->priv->refresh_paths);
+#endif
 
     return 0;
 }
@@ -2887,13 +2911,13 @@ seaf_sync_manager_is_auto_sync_enabled (SeafSyncManager *mgr)
 }
 
 static ActivePathsInfo *
-active_paths_info_new ()
+active_paths_info_new (SeafRepo *repo)
 {
     ActivePathsInfo *info = g_new0 (ActivePathsInfo, 1);
 
     info->paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
-    info->syncing_tree = sync_status_tree_new ();
-    info->ignore_tree = sync_status_tree_new ();
+    info->syncing_tree = sync_status_tree_new (repo->worktree);
+    info->ignore_tree = sync_status_tree_new (repo->worktree);
 
     return info;
 }
@@ -2906,6 +2930,7 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
                                       SyncStatus status)
 {
     ActivePathsInfo *info;
+    SeafRepo *repo;
 
     if (!repo_id || !path) {
         seaf_warning ("BUG: empty repo_id or path.\n");
@@ -2921,7 +2946,8 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
 
     info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
     if (!info) {
-        info = active_paths_info_new ();
+        repo = seaf_repo_manager_get_repo (seaf->repo_mgr, repo_id);
+        info = active_paths_info_new (repo);
         g_hash_table_insert (mgr->priv->active_paths, g_strdup(repo_id), info);
     }
 
@@ -3099,3 +3125,42 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
 
     return ret;
 }
+
+#ifdef WIN32
+
+#define MAX_REFRESH_PATHS_PER_SEC 100
+
+static void *
+refreh_windows_explorer_thread (void *vdata)
+{
+    GAsyncQueue *q = vdata;
+    char *path;
+    wchar_t *path_w;
+    int count = 0;
+
+    while (1) {
+        path = g_async_queue_pop (q);
+        path_w = win32_long_path (path);
+
+        SHChangeNotify (SHCNE_UPDATEITEM, SHCNF_PATH, path_w, NULL);
+
+        g_free (path);
+        g_free (path_w);
+
+        seaf_message ("Refresh %s\n", path);
+        ++count;
+
+        if (count >= MAX_REFRESH_PATHS_PER_SEC) {
+            g_usleep (G_USEC_PER_SEC);
+            count = 0;
+        }
+    }
+}
+
+void
+seaf_sync_manager_add_refresh_path (SeafSyncManager *mgr, const char *path)
+{
+    g_async_queue_push (mgr->priv->refresh_paths, g_strdup(path));
+}
+
+#endif
