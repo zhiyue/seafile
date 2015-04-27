@@ -232,8 +232,12 @@ class Seahub(Project):
     name = 'seahub'
     def __init__(self):
         Project.__init__(self)
-        # nothing to do for seahub
+        # Run make dist to process static files
+        path_env = '$PATH:%s' % conf['thirdpartdir']
+        pythonpath_env = '%s/lib/python2.6/site-packages:%s/lib64/python2.6/site-packages:%s:$PYTHONPATH' \
+                         % (self.prefix, self.prefix, conf['thirdpartdir'])
         self.build_commands = [
+            'PATH=%s;PYTHONPATH=%s;make dist' % (path_env, pythonpath_env),
         ]
 
     def get_version(self):
