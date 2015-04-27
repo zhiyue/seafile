@@ -83,7 +83,6 @@ struct _SeafSyncManagerPriv {
 struct _ActivePathsInfo {
     GHashTable *paths;
     struct SyncStatusTree *syncing_tree;
-    struct SyncStatusTree *ignore_tree;
 };
 typedef struct _ActivePathsInfo ActivePathsInfo;
 
@@ -2917,7 +2916,6 @@ active_paths_info_new (SeafRepo *repo)
 
     info->paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
     info->syncing_tree = sync_status_tree_new (repo->worktree);
-    info->ignore_tree = sync_status_tree_new (repo->worktree);
 
     return info;
 }
@@ -2961,19 +2959,17 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
         g_hash_table_insert (info->paths, g_strdup(path), (void*)status);
         if (status == SYNC_STATUS_SYNCING)
             sync_status_tree_add (info->syncing_tree, path, mode);
-        else if (status == SYNC_STATUS_IGNORED)
-            sync_status_tree_add (info->ignore_tree, path, mode);
+        else if (status == SYNC_STATUS_ERROR ||
+                 status == SYNC_STATUS_IGNORED)
+            seaf_sync_manager_add_refresh_path (mgr, path);
     } else if (existing != status) {
         g_hash_table_replace (info->paths, g_strdup(path), (void*)status);
-        if (existing == SYNC_STATUS_SYNCING &&
-            status == SYNC_STATUS_IGNORED) {
+
+        if (existing == SYNC_STATUS_SYNCING)
             sync_status_tree_del (info->syncing_tree, path);
-            sync_status_tree_add (info->ignore_tree, path, mode);
-        } else if (existing == SYNC_STATUS_IGNORED &&
-                   status == SYNC_STATUS_SYNCING) {
-            sync_status_tree_del (info->ignore_tree, path);
+
+        if (status == SYNC_STATUS_SYNCING)
             sync_status_tree_add (info->syncing_tree, path, mode);
-        }
     }
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
@@ -3001,7 +2997,6 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
 
     g_hash_table_remove (info->paths, path);
     sync_status_tree_del (info->syncing_tree, path);
-    sync_status_tree_del (info->ignore_tree, path);
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
@@ -3042,8 +3037,6 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
     if (is_dir && (ret == SYNC_STATUS_NONE)) {
         if (sync_status_tree_exists (info->syncing_tree, path))
             ret = SYNC_STATUS_SYNCING;
-        else if (sync_status_tree_exists (info->ignore_tree, path))
-            ret = SYNC_STATUS_IGNORED;
     }
 
     if (ret == SYNC_STATUS_NONE)
@@ -3152,7 +3145,7 @@ refresh_windows_explorer_thread (void *vdata)
 
         SHChangeNotify (SHCNE_UPDATEITEM, SHCNF_PATH, path_w, NULL);
 
-        seaf_message ("Refresh %s\n", path);
+        seaf_debug ("Refresh %s\n", path);
 
         g_free (path);
         g_free (path_w);
