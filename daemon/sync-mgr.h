@@ -93,6 +93,7 @@ enum _SyncStatus {
     SYNC_STATUS_SYNCING,
     SYNC_STATUS_ERROR,
     SYNC_STATUS_IGNORED,
+    SYNC_STATUS_SYNCED,
     N_SYNC_STATUS,
 };
 typedef enum _SyncStatus SyncStatus;
@@ -171,7 +172,7 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
                                       const char *path);
 
-SyncStatus
+char *
 seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
                                         const char *repo_id,
                                         const char *path,

@@ -2497,6 +2497,7 @@ check_folder_permissions (SeafSyncManager *mgr, GList *repos)
     }
 }
 
+#if 0
 static void
 print_active_paths (SeafSyncManager *mgr)
 {
@@ -2508,6 +2509,7 @@ print_active_paths (SeafSyncManager *mgr)
         g_free (paths_json);
     }
 }
+#endif
 
 static int
 auto_sync_pulse (void *vmanager)
@@ -2516,8 +2518,6 @@ auto_sync_pulse (void *vmanager)
     GList *repos, *ptr;
     SeafRepo *repo;
     gint64 now;
-
-    print_active_paths (manager);
 
     repos = seaf_repo_manager_get_repo_list (manager->seaf->repo_mgr, -1, -1);
 
@@ -3006,7 +3006,16 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
 
-SyncStatus
+static char *path_status_tbl[] = {
+    "none",
+    "syncing",
+    "error",
+    "ignored",
+    "synced",
+    NULL,
+};
+
+char *
 seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
                                         const char *repo_id,
                                         const char *path,
@@ -3017,7 +3026,7 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
 
     if (!repo_id || !path) {
         seaf_warning ("BUG: empty repo_id or path.\n");
-        return SYNC_STATUS_NONE;
+        return NULL;
     }
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
@@ -3025,7 +3034,8 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
     info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
     if (!info) {
         pthread_mutex_unlock (&mgr->priv->paths_lock);
-        return SYNC_STATUS_NONE;
+        ret = SYNC_STATUS_NONE;
+        goto out;
     }
 
     ret = (SyncStatus) g_hash_table_lookup (info->paths, path);
@@ -3036,18 +3046,14 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
             ret = SYNC_STATUS_IGNORED;
     }
 
+    if (ret == SYNC_STATUS_NONE)
+        ret = SYNC_STATUS_SYNCED;
+
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 
-    return ret;
+out:
+    return g_strdup(path_status_tbl[ret]);
 }
-
-static char *path_status_tbl[] = {
-    "none",
-    "syncing",
-    "error",
-    "ignored",
-    NULL,
-};
 
 static json_t *
 active_paths_to_json (GHashTable *paths)
@@ -3132,8 +3138,6 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
 }
 
 #ifdef WIN32
-
-#define MAX_REFRESH_PATHS_PER_SEC 100
 
 static void *
 refresh_windows_explorer_thread (void *vdata)
