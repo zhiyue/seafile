@@ -2497,7 +2497,6 @@ check_folder_permissions (SeafSyncManager *mgr, GList *repos)
     }
 }
 
-#if 0
 static void
 print_active_paths (SeafSyncManager *mgr)
 {
@@ -2509,7 +2508,6 @@ print_active_paths (SeafSyncManager *mgr)
         g_free (paths_json);
     }
 }
-#endif
 
 static int
 auto_sync_pulse (void *vmanager)
@@ -2518,6 +2516,8 @@ auto_sync_pulse (void *vmanager)
     GList *repos, *ptr;
     SeafRepo *repo;
     gint64 now;
+
+    print_active_paths (manager);
 
     repos = seaf_repo_manager_get_repo_list (manager->seaf->repo_mgr, -1, -1);
 
@@ -3146,23 +3146,40 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
 
 #ifdef WIN32
 
+static wchar_t *
+win_path (const char *path)
+{
+    char *ret = g_strdup(path);
+    wchar_t *ret_w;
+    char *p;
+
+    for (p = ret; *p != 0; ++p)
+        if (*p == '/')
+            *p = '\\';
+
+    ret_w = g_utf8_to_utf16 (ret, -1, NULL, NULL, NULL);
+
+    g_free (ret);
+    return ret_w;
+}
+
 static void *
 refresh_windows_explorer_thread (void *vdata)
 {
     GAsyncQueue *q = vdata;
     char *path;
-    wchar_t *path_w;
+    wchar_t *wpath;
 
     while (1) {
         path = g_async_queue_pop (q);
-        path_w = win32_long_path (path);
+        wpath = win_path (path);
 
-        SHChangeNotify (SHCNE_UPDATEITEM, SHCNF_PATH, path_w, NULL);
+        SHChangeNotify (SHCNE_CREATE, SHCNF_PATHW, wpath, NULL);
 
         seaf_debug ("Refresh %s\n", path);
 
         g_free (path);
-        g_free (path_w);
+        g_free (wpath);
     }
 }
 
