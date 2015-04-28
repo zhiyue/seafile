@@ -97,7 +97,7 @@ refresh_recursive (const char *basedir, SyncStatusDir *dir)
         seaf_sync_manager_add_refresh_path (seaf->sync_mgr, path);
 
         if (S_ISDIR(dirent->mode))
-            refresh_recursive (path, dirent->sub_dir);
+            refresh_recursive (path, dirent->subdir);
 
         g_free (path);
     }
@@ -110,13 +110,13 @@ sync_status_tree_free (struct SyncStatusTree *tree)
     if (!tree)
         return;
 
-    g_free (tree->worktree);
-
     /* Free the tree recursively. */
 #ifdef WIN32
     refresh_recursive (tree->worktree, tree->root);
 #endif
     sync_status_dir_free (tree->root);
+
+    g_free (tree->worktree);
 }
 
 void

@@ -124,6 +124,9 @@ sync_repo_v2 (SeafSyncManager *manager, SeafRepo *repo, gboolean is_manual_sync)
 static gboolean
 check_http_protocol (SeafSyncManager *mgr, SeafRepo *repo);
 
+static void
+active_paths_info_free (ActivePathsInfo *info);
+
 SeafSyncManager*
 seaf_sync_manager_new (SeafileSession *seaf)
 {
@@ -156,7 +159,7 @@ seaf_sync_manager_new (SeafileSession *seaf)
 
     mgr->priv->active_paths = g_hash_table_new_full (g_str_hash, g_str_equal,
                                                      g_free,
-                                                     (GDestroyNotify)g_hash_table_destroy);
+                                                     (GDestroyNotify)active_paths_info_free);
     pthread_mutex_init (&mgr->priv->paths_lock, NULL);
 
 #ifdef WIN32
@@ -2517,7 +2520,7 @@ auto_sync_pulse (void *vmanager)
     SeafRepo *repo;
     gint64 now;
 
-    print_active_paths (manager);
+    /* print_active_paths (manager); */
 
     repos = seaf_repo_manager_get_repo_list (manager->seaf->repo_mgr, -1, -1);
 
@@ -2941,6 +2944,17 @@ active_paths_info_new (SeafRepo *repo)
     return info;
 }
 
+static void
+active_paths_info_free (ActivePathsInfo *info)
+{
+    if (!info)
+        return;
+    g_hash_table_destroy (info->paths);
+    sync_status_tree_free (info->syncing_tree);
+    sync_status_tree_free (info->synced_tree);
+    g_free (info);
+}
+
 void
 seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
                                       const char *repo_id,
@@ -3053,6 +3067,8 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
         seaf_warning ("BUG: empty repo_id or path.\n");
         return NULL;
     }
+
+    seaf_message ("get_path_sync_status for %s\n", path);
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
 
@@ -3170,11 +3186,7 @@ seaf_sync_manager_remove_active_path_info (SeafSyncManager *mgr, const char *rep
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
 
-    info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
-    g_hash_table_destroy (info->paths);
-    sync_status_tree_free (info->syncing_tree);
-    sync_status_tree_free (info->synced_tree);
-    g_free (info);
+    g_hash_table_remove (mgr->priv->active_paths, repo_id);
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
@@ -3204,17 +3216,23 @@ refresh_windows_explorer_thread (void *vdata)
     GAsyncQueue *q = vdata;
     char *path;
     wchar_t *wpath;
+    int count = 0;
 
     while (1) {
         path = g_async_queue_pop (q);
         wpath = win_path (path);
 
-        SHChangeNotify (SHCNE_CREATE, SHCNF_PATHW, wpath, NULL);
+        SHChangeNotify (SHCNE_ATTRIBUTES, SHCNF_PATHW, wpath, NULL);
 
         seaf_debug ("Refresh %s\n", path);
 
         g_free (path);
         g_free (wpath);
+
+        if (++count >= 100) {
+            g_usleep (G_USEC_PER_SEC);
+            count = 0;
+        }
     }
 }
 
