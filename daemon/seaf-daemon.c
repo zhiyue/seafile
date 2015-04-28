@@ -274,7 +274,7 @@ start_rpc_service (CcnetClient *client)
 
     searpc_server_register_function ("seafile-rpcserver",
                                      seafile_get_path_sync_status,
-                                     "get_path_sync_status",
+                                     "seafile_get_path_sync_status",
                                      searpc_signature_string__string_string_int());
 }
 

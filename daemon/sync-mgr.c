@@ -2960,8 +2960,11 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
         if (status == SYNC_STATUS_SYNCING)
             sync_status_tree_add (info->syncing_tree, path, mode);
         else if (status == SYNC_STATUS_ERROR ||
-                 status == SYNC_STATUS_IGNORED)
+                 status == SYNC_STATUS_IGNORED) {
+#ifdef WIN32
             seaf_sync_manager_add_refresh_path (mgr, path);
+#endif
+        }
     } else if (existing != status) {
         g_hash_table_replace (info->paths, g_strdup(path), (void*)status);
 
