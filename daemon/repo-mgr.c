@@ -1075,13 +1075,17 @@ add_file (const char *repo_id,
 
     if (options && options->startup_scan) {
         struct cache_entry *ce;
+        SyncStatus status;
         ce = index_name_exists (istate, path, strlen(path), 0);
         if (!ce || ie_match_stat(ce, st, 0) != 0)
-            seaf_sync_manager_update_active_path (seaf->sync_mgr,
-                                                  repo_id,
-                                                  path,
-                                                  S_IFREG,
-                                                  SYNC_STATUS_SYNCING);
+            status = SYNC_STATUS_SYNCING;
+        else
+            status = SYNC_STATUS_SYNCED;
+        seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                              repo_id,
+                                              path,
+                                              S_IFREG,
+                                              status);
     }
 
     if (options && options->fset) {
@@ -1249,14 +1253,18 @@ add_dir_recursive (const char *path, const char *full_path, SeafStat *st,
                                                   S_IFDIR,
                                                   SYNC_STATUS_IGNORED);
         } else {
+            SyncStatus status;
             struct cache_entry *ce = index_name_exists (params->istate, path,
                                                         strlen(path), 0);
             if (!ce)
-                seaf_sync_manager_update_active_path (seaf->sync_mgr,
-                                                      params->repo_id,
-                                                      path,
-                                                      S_IFDIR,
-                                                      SYNC_STATUS_SYNCING);
+                status = SYNC_STATUS_SYNCING;
+            else
+                status = SYNC_STATUS_SYNCED;
+            seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                                  params->repo_id,
+                                                  path,
+                                                  S_IFDIR,
+                                                  status);
         }
     }
 
@@ -2018,13 +2026,17 @@ update_active_file (const char *repo_id,
                                               S_IFREG,
                                               SYNC_STATUS_IGNORED);
     } else {
+        SyncStatus status;
         struct cache_entry *ce = index_name_exists(istate, path, strlen(path), 0);
         if (!ce || ie_match_stat(ce, st, 0) != 0)
-            seaf_sync_manager_update_active_path (seaf->sync_mgr,
-                                                  repo_id,
-                                                  path,
-                                                  S_IFREG,
-                                                  SYNC_STATUS_SYNCING);
+            status = SYNC_STATUS_SYNCING;
+        else
+            status = SYNC_STATUS_SYNCED;
+        seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                              repo_id,
+                                              path,
+                                              S_IFREG,
+                                              status);
     }
 }
 
@@ -2115,13 +2127,17 @@ update_active_path_recursive (SeafRepo *repo,
                                                   SYNC_STATUS_IGNORED);
         } else {
             /* There is no need to update an empty dir. */
+            SyncStatus status;
             struct cache_entry *ce = index_name_exists(istate, path, strlen(path), 0);
             if (!ce)
-                seaf_sync_manager_update_active_path (seaf->sync_mgr,
-                                                      repo->id,
-                                                      path,
-                                                      S_IFDIR,
-                                                      SYNC_STATUS_SYNCING);
+                status = SYNC_STATUS_SYNCING;
+            else
+                status = SYNC_STATUS_SYNCED;
+            seaf_sync_manager_update_active_path (seaf->sync_mgr,
+                                                  repo->id,
+                                                  path,
+                                                  S_IFDIR,
+                                                  status);
         }
     }
 }

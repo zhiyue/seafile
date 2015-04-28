@@ -83,6 +83,7 @@ struct _SeafSyncManagerPriv {
 struct _ActivePathsInfo {
     GHashTable *paths;
     struct SyncStatusTree *syncing_tree;
+    struct SyncStatusTree *synced_tree;
 };
 typedef struct _ActivePathsInfo ActivePathsInfo;
 
@@ -2916,6 +2917,7 @@ active_paths_info_new (SeafRepo *repo)
 
     info->paths = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
     info->syncing_tree = sync_status_tree_new (repo->worktree);
+    info->synced_tree = sync_status_tree_new (repo->worktree);
 
     return info;
 }
@@ -2959,8 +2961,9 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
         g_hash_table_insert (info->paths, g_strdup(path), (void*)status);
         if (status == SYNC_STATUS_SYNCING)
             sync_status_tree_add (info->syncing_tree, path, mode);
-        else if (status == SYNC_STATUS_ERROR ||
-                 status == SYNC_STATUS_IGNORED) {
+        else if (status == SYNC_STATUS_SYNCED)
+            sync_status_tree_add (info->synced_tree, path, mode);
+        else {
 #ifdef WIN32
             seaf_sync_manager_add_refresh_path (mgr, path);
 #endif
@@ -2970,9 +2973,13 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
 
         if (existing == SYNC_STATUS_SYNCING)
             sync_status_tree_del (info->syncing_tree, path);
+        else if (existing == SYNC_STATUS_SYNCED)
+            sync_status_tree_del (info->synced_tree, path);
 
         if (status == SYNC_STATUS_SYNCING)
             sync_status_tree_add (info->syncing_tree, path, mode);
+        else if (status == SYNC_STATUS_SYNCED)
+            sync_status_tree_add (info->synced_tree, path, mode);
     }
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
@@ -3000,6 +3007,7 @@ seaf_sync_manager_delete_active_path (SeafSyncManager *mgr,
 
     g_hash_table_remove (info->paths, path);
     sync_status_tree_del (info->syncing_tree, path);
+    sync_status_tree_del (info->synced_tree, path);
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
@@ -3038,12 +3046,15 @@ seaf_sync_manager_get_path_sync_status (SeafSyncManager *mgr,
 
     ret = (SyncStatus) g_hash_table_lookup (info->paths, path);
     if (is_dir && (ret == SYNC_STATUS_NONE)) {
+        /* If a dir is not in the syncing tree but in the synced tree,
+         * it's synced. Otherwise if it's in the syncing tree, some files
+         * under it must be syncing, so it should be in syncing status too.
+         */
         if (sync_status_tree_exists (info->syncing_tree, path))
             ret = SYNC_STATUS_SYNCING;
+        else if (sync_status_tree_exists (info->synced_tree, path))
+            ret = SYNC_STATUS_SYNCED;
     }
-
-    if (ret == SYNC_STATUS_NONE)
-        ret = SYNC_STATUS_SYNCED;
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
 

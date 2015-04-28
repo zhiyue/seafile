@@ -2324,7 +2324,7 @@ update_master_branch (HttpTxTask *task)
 }
 
 static void
-update_path_sync_status (gpointer key, gpointer value, gpointer user_data)
+set_path_status_syncing (gpointer key, gpointer value, gpointer user_data)
 {
     HttpTxTask *task = user_data;
     char *path = key;
@@ -2337,13 +2337,16 @@ update_path_sync_status (gpointer key, gpointer value, gpointer user_data)
 }
 
 static void
-delete_path_sync_status (gpointer key, gpointer value, gpointer user_data)
+set_path_status_synced (gpointer key, gpointer value, gpointer user_data)
 {
     HttpTxTask *task = user_data;
     char *path = key;
-    seaf_sync_manager_delete_active_path (seaf->sync_mgr,
+    int mode = (int)(long)value;
+    seaf_sync_manager_update_active_path (seaf->sync_mgr,
                                           task->repo_id,
-                                          path);
+                                          path,
+                                          mode,
+                                          SYNC_STATUS_SYNCED);
 }
 
 static void *
@@ -2398,7 +2401,7 @@ http_upload_thread (void *vdata)
         goto out;
     }
 
-    g_hash_table_foreach (active_paths, update_path_sync_status, task);
+    g_hash_table_foreach (active_paths, set_path_status_syncing, task);
 
     if (check_permission (task, conn) < 0) {
         seaf_warning ("Upload permission denied for repo %.8s on server %s.\n",
@@ -2529,7 +2532,7 @@ http_upload_thread (void *vdata)
     update_master_branch (task);
 
     if (active_paths != NULL)
-        g_hash_table_foreach (active_paths, delete_path_sync_status, task);
+        g_hash_table_foreach (active_paths, set_path_status_synced, task);
 
 out:
     string_list_free (send_fs_list);
