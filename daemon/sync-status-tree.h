@@ -6,6 +6,9 @@ struct SyncStatusTree;
 struct SyncStatusTree *
 sync_status_tree_new (const char *worktree);
 
+void
+sync_status_tree_free (struct SyncStatusTree *tree);
+
 /*
  * Add a @path into the @tree. If any directory along the path is missing,
  * it will be created. If the path already exists, it won't be overwritten.

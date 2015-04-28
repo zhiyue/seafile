@@ -79,6 +79,46 @@ sync_status_tree_new (const char *worktree)
     return tree;
 }
 
+#ifdef WIN32
+static void
+refresh_recursive (const char *basedir, SyncStatusDir *dir)
+{
+    GHashTableIter iter;
+    gpointer key, value;
+    char *dname, *path;
+    SyncStatusDirent *dirent;
+
+    g_hash_table_iter_init (&iter, dir->dirents);
+    while (g_hash_table_iter_next (&iter, &key, &value)) {
+        dname = key;
+        dirent = value;
+
+        path = g_strconcat(basedir, "/", dname, NULL);
+        seaf_sync_manager_add_refresh_path (seaf->sync_mgr, path);
+
+        if (S_ISDIR(dirent->mode))
+            refresh_recursive (path, dirent->sub_dir);
+
+        g_free (path);
+    }
+}
+#endif
+
+void
+sync_status_tree_free (struct SyncStatusTree *tree)
+{
+    if (!tree)
+        return;
+
+    g_free (tree->worktree);
+
+    /* Free the tree recursively. */
+#ifdef WIN32
+    refresh_recursive (tree->worktree, tree->root);
+#endif
+    sync_status_dir_free (tree->root);
+}
+
 void
 sync_status_tree_add (SyncStatusTree *tree,
                       const char *path,

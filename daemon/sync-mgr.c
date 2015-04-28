@@ -2850,6 +2850,22 @@ cancel_all_sync_tasks (SeafSyncManager *mgr)
     g_list_free (repos);
 }
 
+static void
+remove_all_sync_status (SeafSyncManager *mgr)
+{
+    GList *repos;
+    GList *ptr;
+    SeafRepo *repo;
+
+    repos = seaf_repo_manager_get_repo_list (seaf->repo_mgr, -1, -1);
+    for (ptr = repos; ptr; ptr = ptr->next) {
+        repo = ptr->data;
+        seaf_sync_manager_remove_active_path_info (mgr, repo->id);
+    }
+
+    g_list_free (repos);
+}
+
 int
 seaf_sync_manager_disable_auto_sync (SeafSyncManager *mgr)
 {
@@ -2859,6 +2875,9 @@ seaf_sync_manager_disable_auto_sync (SeafSyncManager *mgr)
     }
 
     cancel_all_sync_tasks (mgr);
+
+    remove_all_sync_status (mgr);
+
     mgr->priv->auto_sync_enabled = FALSE;
     g_debug ("[sync mgr] auto sync is disabled\n");
     return 0;
@@ -3142,6 +3161,22 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
     }
 
     return ret;
+}
+
+void
+seaf_sync_manager_remove_active_path_info (SeafSyncManager *mgr, const char *repo_id)
+{
+    ActivePathsInfo *info;
+
+    pthread_mutex_lock (&mgr->priv->paths_lock);
+
+    info = g_hash_table_lookup (mgr->priv->active_paths, repo_id);
+    g_hash_table_destroy (info->paths);
+    sync_status_tree_free (info->syncing_tree);
+    sync_status_tree_free (info->synced_tree);
+    g_free (info);
+
+    pthread_mutex_unlock (&mgr->priv->paths_lock);
 }
 
 #ifdef WIN32

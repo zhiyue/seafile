@@ -4485,6 +4485,8 @@ seaf_repo_manager_del_repo (SeafRepoManager *mgr,
 
     pthread_rwlock_unlock (&mgr->priv->lock);
 
+    seaf_sync_manager_remove_active_path_info (seaf->sync_mgr, repo->id);
+
     seaf_repo_free (repo);
 
     return 0;
@@ -5189,6 +5191,7 @@ seaf_repo_manager_set_repo_property (SeafRepoManager *manager,
                 seaf_wt_monitor_unwatch_repo (seaf->wt_monitor, repo->id);
             /* Cancel current sync task if any. */
             seaf_sync_manager_cancel_sync_task (seaf->sync_mgr, repo->id);
+            seaf_sync_manager_remove_active_path_info (seaf->sync_mgr, repo->id);
         }
     }
     if (strcmp(key, REPO_NET_BROWSABLE) == 0) {

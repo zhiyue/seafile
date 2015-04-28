@@ -184,6 +184,9 @@ seaf_sync_manager_list_active_paths_json (SeafSyncManager *mgr);
 int
 seaf_sync_manager_active_paths_number (SeafSyncManager *mgr);
 
+void
+seaf_sync_manager_remove_active_path_info (SeafSyncManager *mgr, const char *repo_id);
+
 #ifdef WIN32
 void
 seaf_sync_manager_add_refresh_path (SeafSyncManager *mgr, const char *path);
