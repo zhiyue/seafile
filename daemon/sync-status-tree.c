@@ -112,7 +112,7 @@ sync_status_tree_free (struct SyncStatusTree *tree)
 
     /* Free the tree recursively. */
 #ifdef WIN32
-    refresh_recursive (tree->worktree, tree->root);
+    /* refresh_recursive (tree->worktree, tree->root); */
 #endif
     sync_status_dir_free (tree->root);
 

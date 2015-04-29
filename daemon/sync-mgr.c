@@ -3179,6 +3179,9 @@ seaf_sync_manager_active_paths_number (SeafSyncManager *mgr)
     return ret;
 }
 
+static wchar_t *
+win_path (const char *path);
+
 void
 seaf_sync_manager_remove_active_path_info (SeafSyncManager *mgr, const char *repo_id)
 {
@@ -3189,6 +3192,16 @@ seaf_sync_manager_remove_active_path_info (SeafSyncManager *mgr, const char *rep
     g_hash_table_remove (mgr->priv->active_paths, repo_id);
 
     pthread_mutex_unlock (&mgr->priv->paths_lock);
+
+    SeafRepo *repo = seaf_repo_manager_get_repo (seaf->repo_mgr, repo_id);
+    if (!repo)
+        return;
+    seaf_message ("Before remove notify.\n");
+    wchar_t *wpath = win_path(repo->worktree);
+    SHChangeNotify (SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_NOTIFYRECURSIVE,
+                    wpath, NULL);
+    g_free (wpath);
+    seaf_message ("After remove notify.\n");
 }
 
 #ifdef WIN32

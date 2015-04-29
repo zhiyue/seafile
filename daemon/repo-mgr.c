@@ -4476,6 +4476,8 @@ seaf_repo_manager_del_repo (SeafRepoManager *mgr,
     seaf_repo_manager_remove_repo_ondisk (mgr, repo->id,
                                           (repo->version > 0) ? TRUE : FALSE);
 
+    seaf_sync_manager_remove_active_path_info (seaf->sync_mgr, repo->id);
+
     if (pthread_rwlock_wrlock (&mgr->priv->lock) < 0) {
         g_warning ("[repo mgr] failed to lock repo cache.\n");
         return -1;
@@ -4484,8 +4486,6 @@ seaf_repo_manager_del_repo (SeafRepoManager *mgr,
     g_hash_table_remove (mgr->priv->repo_hash, repo->id);
 
     pthread_rwlock_unlock (&mgr->priv->lock);
-
-    seaf_sync_manager_remove_active_path_info (seaf->sync_mgr, repo->id);
 
     seaf_repo_free (repo);
 
