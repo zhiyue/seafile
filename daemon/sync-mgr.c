@@ -2556,7 +2556,7 @@ auto_sync_pulse (void *vmanager)
     SeafRepo *repo;
     gint64 now;
 
-    /* print_active_paths (manager); */
+    print_active_paths (manager);
 
     repos = seaf_repo_manager_get_repo_list (manager->seaf->repo_mgr, -1, -1);
 
@@ -2988,6 +2988,8 @@ seaf_sync_manager_update_active_path (SeafSyncManager *mgr,
         seaf_warning ("BUG: invalid sync status %d.\n", status);
         return;
     }
+
+    seaf_message ("Update sync status %s %d\n", path, status);
 
     pthread_mutex_lock (&mgr->priv->paths_lock);
 
